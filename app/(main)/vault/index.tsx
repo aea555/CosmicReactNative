@@ -1,0 +1,718 @@
+import { Input } from '@/components/ui/Input';
+import { Modal } from '@/components/ui/Modal';
+import { NoteItem } from '@/components/vault/NoteItem';
+import { SecretItem } from '@/components/vault/SecretItem';
+import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
+import { api, Note, Secret } from '@/services/api';
+import { Ionicons } from '@expo/vector-icons';
+import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+    FlatList,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+
+type ItemType = 'secret' | 'note';
+
+// Create query client
+const queryClient = new QueryClient({
+    defaultOptions: {
+        queries: {
+            staleTime: 1000 * 60, // 1 minute
+            retry: 2,
+        },
+    },
+});
+
+function VaultContent() {
+    const { theme } = useTheme();
+    const { getAccessToken, masterPassword } = useAuth();
+    const router = useRouter();
+    const qc = useQueryClient();
+
+    const [searchQuery, setSearchQuery] = useState('');
+    const [showSecrets, setShowSecrets] = useState(true);
+    const [showNotes, setShowNotes] = useState(true);
+    const [showCreateMenu, setShowCreateMenu] = useState(false);
+
+    // Modal states
+    const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState<{ type: ItemType; id: string } | null>(null);
+    const [editModalVisible, setEditModalVisible] = useState(false);
+    const [editTarget, setEditTarget] = useState<{ type: ItemType; item: Secret | Note } | null>(null);
+    const [createModalVisible, setCreateModalVisible] = useState(false);
+    const [createType, setCreateType] = useState<ItemType>('secret');
+
+    // Form states
+    const [formData, setFormData] = useState({
+        title: '',
+        username: '',
+        email: '',
+        password: '',
+        url: '',
+        telephone_number: '',
+        content: '',
+    });
+
+    // Favorites refresh key - increment to force re-render
+    const [favoriteKey, setFavoriteKey] = useState(0);
+
+    // Set up API with tokens
+    useEffect(() => {
+        const token = getAccessToken();
+        if (token) api.setAccessToken(token);
+        if (masterPassword) api.setMasterPassword(masterPassword);
+    }, [getAccessToken, masterPassword]);
+
+    // React Query - Secrets
+    const {
+        data: secrets = [],
+        isLoading: secretsLoading,
+        refetch: refetchSecrets,
+    } = useQuery({
+        queryKey: ['secrets'],
+        queryFn: () => api.getSecrets(),
+    });
+
+    // React Query - Notes
+    const {
+        data: notes = [],
+        isLoading: notesLoading,
+        refetch: refetchNotes,
+    } = useQuery({
+        queryKey: ['notes'],
+        queryFn: () => api.getNotes(),
+    });
+
+    const isLoading = secretsLoading || notesLoading;
+
+    // Mutations
+    const createSecretMutation = useMutation({
+        mutationFn: (data: Parameters<typeof api.createSecret>[0]) => api.createSecret(data),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['secrets'] });
+            resetForm();
+            setCreateModalVisible(false);
+        },
+    });
+
+    const updateSecretMutation = useMutation({
+        mutationFn: ({ id, data }: { id: string; data: Parameters<typeof api.updateSecret>[1] }) =>
+            api.updateSecret(id, data),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['secrets'] });
+            resetForm();
+            setEditModalVisible(false);
+            setEditTarget(null);
+        },
+    });
+
+    const deleteSecretMutation = useMutation({
+        mutationFn: (id: string) => api.deleteSecret(id),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['secrets'] });
+            setDeleteModalVisible(false);
+            setDeleteTarget(null);
+        },
+    });
+
+    const cloneSecretMutation = useMutation({
+        mutationFn: (secret: Secret) =>
+            api.createSecret({
+                title: `${secret.title} (copy)`,
+                username: secret.username,
+                email: secret.email,
+                password: secret.password,
+                url: secret.url,
+                telephone_number: secret.telephone_number,
+            }),
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['secrets'] }),
+    });
+
+    const createNoteMutation = useMutation({
+        mutationFn: (data: Parameters<typeof api.createNote>[0]) => api.createNote(data),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['notes'] });
+            resetForm();
+            setCreateModalVisible(false);
+        },
+    });
+
+    const updateNoteMutation = useMutation({
+        mutationFn: ({ id, data }: { id: string; data: Parameters<typeof api.updateNote>[1] }) =>
+            api.updateNote(id, data),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['notes'] });
+            resetForm();
+            setEditModalVisible(false);
+            setEditTarget(null);
+        },
+    });
+
+    const deleteNoteMutation = useMutation({
+        mutationFn: (id: string) => api.deleteNote(id),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['notes'] });
+            setDeleteModalVisible(false);
+            setDeleteTarget(null);
+        },
+    });
+
+    const cloneNoteMutation = useMutation({
+        mutationFn: (note: Note) =>
+            api.createNote({
+                title: `${note.title} (copy)`,
+                content: note.content,
+            }),
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['notes'] }),
+    });
+
+    const handleRefresh = useCallback(() => {
+        refetchSecrets();
+        refetchNotes();
+    }, [refetchSecrets, refetchNotes]);
+
+    // Search filtering
+    const filteredSecrets = useMemo(() => {
+        if (!searchQuery) return secrets;
+        const query = searchQuery.toLowerCase();
+        return secrets.filter((secret) => {
+            if (secret.url?.toLowerCase().includes(query)) return true;
+            if (secret.email?.toLowerCase().includes(query)) return true;
+            if (secret.username?.toLowerCase().includes(query)) return true;
+            if (secret.telephone_number?.toLowerCase().includes(query)) return true;
+            if (secret.title?.toLowerCase().includes(query)) return true;
+            return false;
+        });
+    }, [secrets, searchQuery]);
+
+    const filteredNotes = useMemo(() => {
+        if (!searchQuery) return notes;
+        const query = searchQuery.toLowerCase();
+        return notes.filter(
+            (note) =>
+                note.title?.toLowerCase().includes(query) || note.content?.toLowerCase().includes(query)
+        );
+    }, [notes, searchQuery]);
+
+    // CRUD handlers
+    const handleDelete = () => {
+        if (!deleteTarget) return;
+        if (deleteTarget.type === 'secret') {
+            deleteSecretMutation.mutate(deleteTarget.id);
+        } else {
+            deleteNoteMutation.mutate(deleteTarget.id);
+        }
+    };
+
+    const handleCreate = () => {
+        if (createType === 'secret') {
+            createSecretMutation.mutate({
+                title: formData.title,
+                username: formData.username || undefined,
+                email: formData.email || undefined,
+                password: formData.password || undefined,
+                url: formData.url || undefined,
+                telephone_number: formData.telephone_number || undefined,
+            });
+        } else {
+            createNoteMutation.mutate({
+                title: formData.title,
+                content: formData.content || undefined,
+            });
+        }
+    };
+
+    const handleUpdate = () => {
+        if (!editTarget) return;
+        if (editTarget.type === 'secret') {
+            updateSecretMutation.mutate({
+                id: editTarget.item.id,
+                data: {
+                    title: formData.title,
+                    username: formData.username || undefined,
+                    email: formData.email || undefined,
+                    password: formData.password || undefined,
+                    url: formData.url || undefined,
+                    telephone_number: formData.telephone_number || undefined,
+                },
+            });
+        } else {
+            updateNoteMutation.mutate({
+                id: editTarget.item.id,
+                data: {
+                    title: formData.title,
+                    content: formData.content || undefined,
+                },
+            });
+        }
+    };
+
+    const resetForm = () => {
+        setFormData({
+            title: '',
+            username: '',
+            email: '',
+            password: '',
+            url: '',
+            telephone_number: '',
+            content: '',
+        });
+    };
+
+    const openEditModal = (type: ItemType, item: Secret | Note) => {
+        setEditTarget({ type, item });
+        if (type === 'secret') {
+            const secret = item as Secret;
+            setFormData({
+                title: secret.title || '',
+                username: secret.username || '',
+                email: secret.email || '',
+                password: secret.password || '',
+                url: secret.url || '',
+                telephone_number: secret.telephone_number || '',
+                content: '',
+            });
+        } else {
+            const note = item as Note;
+            setFormData({
+                title: note.title || '',
+                username: '',
+                email: '',
+                password: '',
+                url: '',
+                telephone_number: '',
+                content: note.content || '',
+            });
+        }
+        setEditModalVisible(true);
+    };
+
+    const openCreateModal = (type: ItemType) => {
+        resetForm();
+        setCreateType(type);
+        setCreateModalVisible(true);
+        setShowCreateMenu(false);
+    };
+
+    const handleFavoriteToggle = () => {
+        // Force re-render when favorite changes
+        setFavoriteKey((k) => k + 1);
+    };
+
+    const combinedItems = useMemo(() => {
+        const items: Array<{ item: Secret | Note; type: ItemType }> = [];
+        if (showSecrets) {
+            filteredSecrets.forEach((s) => items.push({ item: s, type: 'secret' }));
+        }
+        if (showNotes) {
+            filteredNotes.forEach((n) => items.push({ item: n, type: 'note' }));
+        }
+        return items;
+        // Include favoriteKey to force re-render on favorite changes
+    }, [filteredSecrets, filteredNotes, showSecrets, showNotes, favoriteKey]);
+
+    const renderItem = useCallback(
+        ({ item }: { item: { item: Secret | Note; type: ItemType } }) => {
+            if (item.type === 'secret') {
+                return (
+                    <SecretItem
+                        secret={item.item as Secret}
+                        onPress={() => router.push(`/(main)/vault/${item.item.id}?type=secret`)}
+                        onEdit={() => openEditModal('secret', item.item)}
+                        onClone={() => cloneSecretMutation.mutate(item.item as Secret)}
+                        onDelete={() => {
+                            setDeleteTarget({ type: 'secret', id: item.item.id });
+                            setDeleteModalVisible(true);
+                        }}
+                        onFavoriteToggle={handleFavoriteToggle}
+                    />
+                );
+            }
+            return (
+                <NoteItem
+                    note={item.item as Note}
+                    onPress={() => router.push(`/(main)/vault/${item.item.id}?type=note`)}
+                    onEdit={() => openEditModal('note', item.item)}
+                    onClone={() => cloneNoteMutation.mutate(item.item as Note)}
+                    onDelete={() => {
+                        setDeleteTarget({ type: 'note', id: item.item.id });
+                        setDeleteModalVisible(true);
+                    }}
+                    onFavoriteToggle={handleFavoriteToggle}
+                />
+            );
+        },
+        [router, cloneSecretMutation, cloneNoteMutation]
+    );
+
+    return (
+        <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
+            {/* Header */}
+            <View style={[styles.header, { backgroundColor: theme.colors.bg }]}>
+                <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Vault</Text>
+
+                {/* Search & Create */}
+                <View style={styles.headerActions}>
+                    <View style={[styles.searchContainer, { backgroundColor: theme.colors.surface }]}>
+                        <Ionicons name="search" size={18} color={theme.colors.textMuted} />
+                        <TextInput
+                            style={[styles.searchInput, { color: theme.colors.text }]}
+                            placeholder="Search..."
+                            placeholderTextColor={theme.colors.textMuted}
+                            value={searchQuery}
+                            onChangeText={setSearchQuery}
+                        />
+                    </View>
+
+                    <View>
+                        <TouchableOpacity
+                            style={[styles.createButton, { backgroundColor: theme.colors.accent }]}
+                            onPress={() => setShowCreateMenu(!showCreateMenu)}
+                        >
+                            <Ionicons name="add" size={22} color="#fff" />
+                        </TouchableOpacity>
+
+                        {showCreateMenu && (
+                            <View style={[styles.createMenu, { backgroundColor: theme.colors.surfaceElevated }]}>
+                                <TouchableOpacity style={styles.createMenuItem} onPress={() => openCreateModal('secret')}>
+                                    <Ionicons name="lock-closed-outline" size={18} color={theme.colors.text} />
+                                    <Text style={[styles.createMenuText, { color: theme.colors.text }]}>New Secret</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.createMenuItem} onPress={() => openCreateModal('note')}>
+                                    <Ionicons name="document-text-outline" size={18} color={theme.colors.text} />
+                                    <Text style={[styles.createMenuText, { color: theme.colors.text }]}>New Note</Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
+                    </View>
+                </View>
+            </View>
+
+            {/* Filter buttons */}
+            <View style={styles.filterRow}>
+                <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>Include:</Text>
+                <TouchableOpacity
+                    style={[
+                        styles.filterButton,
+                        {
+                            backgroundColor: showSecrets ? theme.colors.accent : theme.colors.surface,
+                            borderColor: showSecrets ? theme.colors.accent : theme.colors.border,
+                        },
+                    ]}
+                    onPress={() => setShowSecrets(!showSecrets)}
+                >
+                    <Ionicons name="shield-outline" size={16} color={showSecrets ? '#fff' : theme.colors.textMuted} />
+                    <Text style={[styles.filterButtonText, { color: showSecrets ? '#fff' : theme.colors.textMuted }]}>
+                        Secrets
+                    </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                    style={[
+                        styles.filterButton,
+                        {
+                            backgroundColor: showNotes ? theme.colors.accent : theme.colors.surface,
+                            borderColor: showNotes ? theme.colors.accent : theme.colors.border,
+                        },
+                    ]}
+                    onPress={() => setShowNotes(!showNotes)}
+                >
+                    <Ionicons name="document-text-outline" size={16} color={showNotes ? '#fff' : theme.colors.textMuted} />
+                    <Text style={[styles.filterButtonText, { color: showNotes ? '#fff' : theme.colors.textMuted }]}>
+                        Notes
+                    </Text>
+                </TouchableOpacity>
+            </View>
+
+            {/* List */}
+            <FlatList
+                data={combinedItems}
+                keyExtractor={(item, index) => `${item.type}-${item.item.id}-${index}`}
+                renderItem={renderItem}
+                contentContainerStyle={styles.list}
+                showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={secretsLoading || notesLoading}
+                        onRefresh={handleRefresh}
+                        tintColor={theme.colors.accent}
+                    />
+                }
+                ListEmptyComponent={
+                    <View style={styles.emptyState}>
+                        <Ionicons name="folder-open-outline" size={48} color={theme.colors.textMuted} />
+                        <Text style={[styles.emptyText, { color: theme.colors.textMuted }]}>
+                            {isLoading ? 'Loading...' : 'No items found'}
+                        </Text>
+                    </View>
+                }
+            />
+
+            {/* Delete Modal */}
+            <Modal
+                visible={deleteModalVisible}
+                onClose={() => setDeleteModalVisible(false)}
+                title="Delete Item"
+                message="Are you sure you want to delete this item? This action cannot be undone."
+                confirmText="Delete"
+                onConfirm={handleDelete}
+                variant="danger"
+            />
+
+            {/* Create Modal */}
+            <Modal
+                visible={createModalVisible}
+                onClose={() => setCreateModalVisible(false)}
+                title={createType === 'secret' ? 'New Secret' : 'New Note'}
+                confirmText="Create"
+                onConfirm={handleCreate}
+            >
+                <ScrollView style={styles.formScroll} showsVerticalScrollIndicator={false}>
+                    <Input
+                        label="Title"
+                        value={formData.title}
+                        onChangeText={(v) => setFormData({ ...formData, title: v })}
+                        placeholder="Enter title"
+                    />
+                    {createType === 'secret' ? (
+                        <>
+                            <Input
+                                label="URL"
+                                value={formData.url}
+                                onChangeText={(v) => setFormData({ ...formData, url: v })}
+                                placeholder="https://example.com"
+                                keyboardType="url"
+                                autoCapitalize="none"
+                            />
+                            <Input
+                                label="Email"
+                                value={formData.email}
+                                onChangeText={(v) => setFormData({ ...formData, email: v })}
+                                placeholder="you@example.com"
+                                keyboardType="email-address"
+                                autoCapitalize="none"
+                            />
+                            <Input
+                                label="Username"
+                                value={formData.username}
+                                onChangeText={(v) => setFormData({ ...formData, username: v })}
+                                placeholder="username"
+                                autoCapitalize="none"
+                            />
+                            <Input
+                                label="Password"
+                                value={formData.password}
+                                onChangeText={(v) => setFormData({ ...formData, password: v })}
+                                placeholder="password"
+                                isPassword
+                            />
+                            <Input
+                                label="Phone"
+                                value={formData.telephone_number}
+                                onChangeText={(v) => setFormData({ ...formData, telephone_number: v })}
+                                placeholder="+1234567890"
+                                keyboardType="phone-pad"
+                            />
+                        </>
+                    ) : (
+                        <Input
+                            label="Content"
+                            value={formData.content}
+                            onChangeText={(v) => setFormData({ ...formData, content: v })}
+                            placeholder="Note content..."
+                            multiline
+                            numberOfLines={4}
+                        />
+                    )}
+                </ScrollView>
+            </Modal>
+
+            {/* Edit Modal */}
+            <Modal
+                visible={editModalVisible}
+                onClose={() => setEditModalVisible(false)}
+                title={editTarget?.type === 'secret' ? 'Edit Secret' : 'Edit Note'}
+                confirmText="Save"
+                onConfirm={handleUpdate}
+            >
+                <ScrollView style={styles.formScroll} showsVerticalScrollIndicator={false}>
+                    <Input
+                        label="Title"
+                        value={formData.title}
+                        onChangeText={(v) => setFormData({ ...formData, title: v })}
+                        placeholder="Enter title"
+                    />
+                    {editTarget?.type === 'secret' ? (
+                        <>
+                            <Input
+                                label="URL"
+                                value={formData.url}
+                                onChangeText={(v) => setFormData({ ...formData, url: v })}
+                                placeholder="https://example.com"
+                            />
+                            <Input
+                                label="Email"
+                                value={formData.email}
+                                onChangeText={(v) => setFormData({ ...formData, email: v })}
+                                placeholder="you@example.com"
+                            />
+                            <Input
+                                label="Username"
+                                value={formData.username}
+                                onChangeText={(v) => setFormData({ ...formData, username: v })}
+                                placeholder="username"
+                            />
+                            <Input
+                                label="Password"
+                                value={formData.password}
+                                onChangeText={(v) => setFormData({ ...formData, password: v })}
+                                placeholder="password"
+                                isPassword
+                            />
+                            <Input
+                                label="Phone"
+                                value={formData.telephone_number}
+                                onChangeText={(v) => setFormData({ ...formData, telephone_number: v })}
+                                placeholder="+1234567890"
+                            />
+                        </>
+                    ) : (
+                        <Input
+                            label="Content"
+                            value={formData.content}
+                            onChangeText={(v) => setFormData({ ...formData, content: v })}
+                            placeholder="Note content..."
+                            multiline
+                            numberOfLines={4}
+                        />
+                    )}
+                </ScrollView>
+            </Modal>
+        </View>
+    );
+}
+
+export default function VaultPage() {
+    return (
+        <QueryClientProvider client={queryClient}>
+            <VaultContent />
+        </QueryClientProvider>
+    );
+}
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+    },
+    header: {
+        paddingTop: 60,
+        paddingHorizontal: 20,
+        paddingBottom: 16,
+    },
+    headerTitle: {
+        fontSize: 32,
+        fontFamily: 'Comfortaa_700Bold',
+        marginBottom: 16,
+    },
+    headerActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    searchContainer: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 12,
+        gap: 10,
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 15,
+        fontFamily: 'Comfortaa_400Regular',
+    },
+    createButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    createMenu: {
+        position: 'absolute',
+        top: 52,
+        right: 0,
+        borderRadius: 12,
+        padding: 8,
+        minWidth: 150,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+        elevation: 8,
+        zIndex: 100,
+    },
+    createMenuItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+        gap: 10,
+    },
+    createMenuText: {
+        fontSize: 14,
+        fontFamily: 'Comfortaa_500Medium',
+    },
+    filterRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        paddingBottom: 16,
+        gap: 10,
+    },
+    filterLabel: {
+        fontSize: 13,
+        fontFamily: 'Comfortaa_500Medium',
+        marginRight: 4,
+    },
+    filterButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 10,
+        borderWidth: 1,
+        gap: 6,
+    },
+    filterButtonText: {
+        fontSize: 13,
+        fontFamily: 'Comfortaa_500Medium',
+    },
+    list: {
+        paddingHorizontal: 20,
+        paddingBottom: 120,
+    },
+    emptyState: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingTop: 80,
+        gap: 12,
+    },
+    emptyText: {
+        fontSize: 15,
+        fontFamily: 'Comfortaa_500Medium',
+    },
+    formScroll: {
+        maxHeight: 350,
+        marginBottom: 16,
+    },
+});

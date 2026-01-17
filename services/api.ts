@@ -1,0 +1,247 @@
+/**
+ * API Service with automatic token refresh and error handling
+ */
+
+import { API_BASE_URL } from '@/contexts/AuthContext';
+
+interface ApiOptions extends RequestInit {
+    requiresAuth?: boolean;
+    requiresMasterPassword?: boolean;
+}
+
+interface ApiError {
+    success: false;
+    error: string;
+    code: string;
+}
+
+interface ApiSuccess<T> {
+    success: true;
+    data: T;
+    message?: string;
+}
+
+type ApiResponse<T> = ApiSuccess<T> | ApiError;
+
+class ApiService {
+    private accessToken: string | null = null;
+    private masterPassword: string | null = null;
+
+    setAccessToken(token: string | null) {
+        this.accessToken = token;
+    }
+
+    setMasterPassword(password: string | null) {
+        this.masterPassword = password;
+    }
+
+    async request<T>(endpoint: string, options: ApiOptions = {}): Promise<T> {
+        const { requiresAuth = true, requiresMasterPassword = false, ...fetchOptions } = options;
+
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            ...(fetchOptions.headers as Record<string, string>),
+        };
+
+        if (requiresAuth && this.accessToken) {
+            headers['Authorization'] = `Bearer ${this.accessToken}`;
+        }
+
+        if (requiresMasterPassword && this.masterPassword) {
+            headers['X-Master-Password'] = this.masterPassword;
+        }
+
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+            ...fetchOptions,
+            headers,
+        });
+
+        // Handle 401 - try to refresh token
+        if (response.status === 401 && requiresAuth) {
+            const data = await response.json();
+
+            // Only attempt refresh for expired tokens, not for invalid credentials
+            if (data.code === 'INVALID_TOKEN') {
+                const refreshSuccess = await this.attemptTokenRefresh();
+
+                if (refreshSuccess) {
+                    // Retry the original request with new token
+                    headers['Authorization'] = `Bearer ${this.accessToken}`;
+                    const retryResponse = await fetch(`${API_BASE_URL}${endpoint}`, {
+                        ...fetchOptions,
+                        headers,
+                    });
+
+                    if (!retryResponse.ok) {
+                        const retryData = await retryResponse.json();
+                        throw new ApiRequestError(retryData.error || 'Request failed', retryData.code);
+                    }
+
+                    return retryResponse.json().then(d => d.data || d);
+                } else {
+                    // Refresh failed - logout user
+                    await this.handleRefreshFailure();
+                    throw new ApiRequestError('Session expired. Please log in again.', 'SESSION_EXPIRED');
+                }
+            } else {
+                throw new ApiRequestError(data.error || 'Authentication failed', data.code);
+            }
+        }
+
+        const data: ApiResponse<T> = await response.json();
+
+        if (!response.ok) {
+            throw new ApiRequestError((data as ApiError).error || 'Request failed', (data as ApiError).code);
+        }
+
+        if ('data' in data) {
+            return data.data;
+        }
+
+        return data as unknown as T;
+    }
+
+    private async attemptTokenRefresh(): Promise<boolean> {
+        const refreshFn = (globalThis as any).__cosmicRefreshTokens;
+        const setRefreshing = (globalThis as any).__cosmicSetRefreshing;
+
+        if (!refreshFn) return false;
+
+        try {
+            setRefreshing?.(true);
+            const success = await refreshFn();
+            return success;
+        } catch {
+            return false;
+        } finally {
+            setRefreshing?.(false);
+        }
+    }
+
+    private async handleRefreshFailure(): Promise<void> {
+        const logout = (globalThis as any).__cosmicLogout;
+        if (logout) {
+            await logout();
+        }
+    }
+
+    // Secrets API
+    async getSecrets() {
+        return this.request<Secret[]>('/api/v1/secrets', {
+            requiresMasterPassword: true,
+        });
+    }
+
+    async getSecret(id: string) {
+        return this.request<Secret>(`/api/v1/secrets/${id}`, {
+            requiresMasterPassword: true,
+        });
+    }
+
+    async createSecret(secret: CreateSecretRequest) {
+        return this.request<Secret>('/api/v1/secrets', {
+            method: 'POST',
+            body: JSON.stringify(secret),
+            requiresMasterPassword: true,
+        });
+    }
+
+    async updateSecret(id: string, secret: CreateSecretRequest) {
+        return this.request<Secret>(`/api/v1/secrets/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(secret),
+            requiresMasterPassword: true,
+        });
+    }
+
+    async deleteSecret(id: string) {
+        return this.request<void>(`/api/v1/secrets/${id}`, {
+            method: 'DELETE',
+            requiresMasterPassword: true,
+        });
+    }
+
+    // Notes API
+    async getNotes() {
+        return this.request<Note[]>('/api/v1/notes', {
+            requiresMasterPassword: true,
+        });
+    }
+
+    async getNote(id: string) {
+        return this.request<Note>(`/api/v1/notes/${id}`, {
+            requiresMasterPassword: true,
+        });
+    }
+
+    async createNote(note: CreateNoteRequest) {
+        return this.request<Note>('/api/v1/notes', {
+            method: 'POST',
+            body: JSON.stringify(note),
+            requiresMasterPassword: true,
+        });
+    }
+
+    async updateNote(id: string, note: CreateNoteRequest) {
+        return this.request<Note>(`/api/v1/notes/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(note),
+            requiresMasterPassword: true,
+        });
+    }
+
+    async deleteNote(id: string) {
+        return this.request<void>(`/api/v1/notes/${id}`, {
+            method: 'DELETE',
+            requiresMasterPassword: true,
+        });
+    }
+}
+
+export const api = new ApiService();
+
+// Custom Error class
+export class ApiRequestError extends Error {
+    code: string;
+
+    constructor(message: string, code: string) {
+        super(message);
+        this.code = code;
+        this.name = 'ApiRequestError';
+    }
+}
+
+// Types
+export interface Secret {
+    id: string;
+    title: string;
+    username?: string;
+    email?: string;
+    password?: string;
+    url?: string;
+    telephone_number?: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface CreateSecretRequest {
+    title: string;
+    username?: string;
+    email?: string;
+    password?: string;
+    url?: string;
+    telephone_number?: string;
+}
+
+export interface Note {
+    id: string;
+    title: string;
+    content?: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface CreateNoteRequest {
+    title: string;
+    content?: string;
+}
