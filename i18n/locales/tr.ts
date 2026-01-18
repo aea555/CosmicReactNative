@@ -63,7 +63,7 @@ export default {
         tagline: 'Sırlarınız, güvende.',
         feature1: 'Sıfır bilgi şifrelemesi',
         feature2: 'Güçlü şifre üretimi',
-        feature3: 'Güvenli not saklama',
+        feature3: 'Güvenli not ve şifre saklama',
         footer: 'Verileriniz cihazınızda şifreli kalır.',
     },
     waitingArea: {

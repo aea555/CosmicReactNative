@@ -63,7 +63,7 @@ export default {
         tagline: 'Your secrets, secured.',
         feature1: 'Zero-knowledge encryption',
         feature2: 'Strong password generation',
-        feature3: 'Secure note storage',
+        feature3: 'Secure note and secret storage',
         footer: 'Your data stays encrypted on your device.',
     },
     waitingArea: {
