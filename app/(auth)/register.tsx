@@ -6,6 +6,7 @@ import { calculatePasswordStrength } from '@/services/crypto';
 import { Ionicons } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     KeyboardAvoidingView,
     Platform,
@@ -16,9 +17,18 @@ import {
     View,
 } from 'react-native';
 
+const PASSWORD_REQUIREMENTS = [
+    { key: 'passwordTooShort', check: (p: string) => p.length >= 12 },
+    { key: 'passwordNoUppercase', check: (p: string) => /[A-Z]/.test(p) },
+    { key: 'passwordNoLowercase', check: (p: string) => /[a-z]/.test(p) },
+    { key: 'passwordNoNumber', check: (p: string) => /[0-9]/.test(p) },
+    { key: 'passwordNoSpecial', check: (p: string) => /[^a-zA-Z0-9]/.test(p) },
+];
+
 export default function RegisterPage() {
     const { theme } = useTheme();
     const { register } = useAuth();
+    const { t } = useTranslation();
     const router = useRouter();
 
     const [email, setEmail] = useState('');
@@ -41,19 +51,36 @@ export default function RegisterPage() {
         return colors[passwordStrength.label];
     };
 
+    const getStrengthLabel = (label: string) => {
+        const labelMap: Record<string, string> = {
+            'weak': t('generators.strength.weak'),
+            'fair': t('generators.strength.fair'),
+            'good': t('generators.strength.good'),
+            'strong': t('generators.strength.strong'),
+            'very-strong': t('generators.strength.veryStrong'),
+        };
+        return labelMap[label] || label;
+    };
+
     const handleRegister = async () => {
         if (!email || !password) {
-            setError('Please enter your email and master password');
+            setError(t('auth.enterCredentials'));
+            return;
+        }
+
+        if (email.length > 320) {
+            setError(t('auth.emailTooLong'));
             return;
         }
 
         if (password !== confirmPassword) {
-            setError('Passwords do not match');
+            setError(t('auth.passwordsDontMatch'));
             return;
         }
 
-        if (passwordStrength && passwordStrength.score < 2) {
-            setError('Please choose a stronger password');
+        if (passwordStrength && passwordStrength.feedback.length > 0) {
+            const firstErrorKey = passwordStrength.feedback[0];
+            setError(t(`auth.${firstErrorKey}`));
             return;
         }
 
@@ -64,7 +91,7 @@ export default function RegisterPage() {
             await register(email, password);
             router.push('/(auth)/waiting-area');
         } catch (err: any) {
-            setError(err.message || 'Registration failed. Please try again.');
+            setError(err.message || t('errors.registrationFailed'));
         } finally {
             setIsLoading(false);
         }
@@ -91,10 +118,10 @@ export default function RegisterPage() {
                 {/* Header */}
                 <View style={styles.header}>
                     <Text style={[styles.title, { color: theme.colors.text }]}>
-                        Create Account
+                        {t('auth.createAccount')}
                     </Text>
                     <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>
-                        Start securing your digital life
+                        {t('auth.startSecuring')}
                     </Text>
                 </View>
 
@@ -102,8 +129,35 @@ export default function RegisterPage() {
                 <View style={[styles.warningBanner, { backgroundColor: 'rgba(251, 191, 36, 0.1)' }]}>
                     <Ionicons name="warning" size={22} color={theme.colors.warning} />
                     <Text style={[styles.warningText, { color: theme.colors.warning }]}>
-                        Your master password cannot be recovered if forgotten. Please memorize it carefully.
+                        {t('auth.masterPasswordWarning')}
                     </Text>
+                </View>
+
+                {/* Password Requirements List */}
+                <View style={[styles.requirementsContainer, { backgroundColor: theme.colors.surface }]}>
+                    <Text style={[styles.requirementsTitle, { color: theme.colors.text }]}>
+                        {t('auth.passwordRequirementsTitle')}
+                    </Text>
+                    {PASSWORD_REQUIREMENTS.map((req) => {
+                        const isMet = password ? req.check(password) : false;
+                        return (
+                            <View key={req.key} style={styles.requirementRow}>
+                                <Ionicons
+                                    name={isMet ? 'checkmark-circle' : 'ellipse-outline'}
+                                    size={16}
+                                    color={isMet ? theme.colors.success : theme.colors.textMuted}
+                                />
+                                <Text
+                                    style={[
+                                        styles.requirementText,
+                                        { color: isMet ? theme.colors.success : theme.colors.textMuted },
+                                    ]}
+                                >
+                                    {t(`auth.${req.key}`)}
+                                </Text>
+                            </View>
+                        );
+                    })}
                 </View>
 
                 {/* Error Message */}
@@ -119,8 +173,8 @@ export default function RegisterPage() {
                 {/* Form */}
                 <View style={styles.form}>
                     <Input
-                        label="Email"
-                        placeholder="you@example.com"
+                        label={t('auth.email')}
+                        placeholder={t('auth.emailPlaceholder')}
                         value={email}
                         onChangeText={setEmail}
                         keyboardType="email-address"
@@ -130,8 +184,8 @@ export default function RegisterPage() {
                     />
 
                     <Input
-                        label="Master Password"
-                        placeholder="Create a strong password"
+                        label={t('auth.masterPassword')}
+                        placeholder={t('auth.createMasterPassword')}
                         value={password}
                         onChangeText={setPassword}
                         isPassword
@@ -159,14 +213,28 @@ export default function RegisterPage() {
                                 ))}
                             </View>
                             <Text style={[styles.strengthLabel, { color: getStrengthColor() }]}>
-                                {passwordStrength.label.replace('-', ' ')}
+                                {getStrengthLabel(passwordStrength.label)}
                             </Text>
                         </View>
                     )}
 
+                    {/* Missing Requirements Feedback */}
+                    {passwordStrength && passwordStrength.feedback.length > 0 && (
+                        <View style={[styles.feedbackContainer, { borderColor: theme.colors.error }]}>
+                            {passwordStrength.feedback.map((key) => (
+                                <View key={key} style={styles.feedbackRow}>
+                                    <Ionicons name="close-circle" size={14} color={theme.colors.error} />
+                                    <Text style={[styles.feedbackText, { color: theme.colors.error }]}>
+                                        {t(`auth.${key}`)}
+                                    </Text>
+                                </View>
+                            ))}
+                        </View>
+                    )}
+
                     <Input
-                        label="Confirm Password"
-                        placeholder="Re-enter your password"
+                        label={t('auth.confirmPassword')}
+                        placeholder={t('auth.confirmPasswordPlaceholder')}
                         value={confirmPassword}
                         onChangeText={setConfirmPassword}
                         isPassword
@@ -174,13 +242,13 @@ export default function RegisterPage() {
                         leftIcon="checkmark-circle-outline"
                         error={
                             confirmPassword && password !== confirmPassword
-                                ? 'Passwords do not match'
+                                ? t('auth.passwordsDontMatch')
                                 : undefined
                         }
                     />
 
                     <Button
-                        title="Create Account"
+                        title={t('auth.createAccount')}
                         onPress={handleRegister}
                         loading={isLoading}
                         disabled={isLoading}
@@ -193,12 +261,12 @@ export default function RegisterPage() {
                 {/* Login Link */}
                 <View style={styles.footer}>
                     <Text style={[styles.footerText, { color: theme.colors.textMuted }]}>
-                        Already have an account?{' '}
+                        {t('auth.alreadyHaveAccount')}{' '}
                     </Text>
                     <Link href="/(auth)/login" asChild>
                         <TouchableOpacity>
                             <Text style={[styles.footerLink, { color: theme.colors.accent }]}>
-                                Sign in
+                                {t('auth.signIn')}
                             </Text>
                         </TouchableOpacity>
                     </Link>
@@ -209,7 +277,7 @@ export default function RegisterPage() {
                     <Link href="/(auth)/resend-verification" asChild>
                         <TouchableOpacity>
                             <Text style={[styles.secondaryLink, { color: theme.colors.textMuted }]}>
-                                Resend verification email
+                                {t('auth.resendVerification')}
                             </Text>
                         </TouchableOpacity>
                     </Link>
@@ -253,7 +321,7 @@ const styles = StyleSheet.create({
         alignItems: 'flex-start',
         padding: 14,
         borderRadius: 12,
-        marginBottom: 20,
+        marginBottom: 16,
         gap: 12,
     },
     warningText: {
@@ -261,6 +329,26 @@ const styles = StyleSheet.create({
         fontSize: 13,
         fontFamily: 'Comfortaa_500Medium',
         lineHeight: 20,
+    },
+    requirementsContainer: {
+        padding: 14,
+        borderRadius: 12,
+        marginBottom: 20,
+        gap: 8,
+    },
+    requirementsTitle: {
+        fontSize: 13,
+        fontFamily: 'Comfortaa_600SemiBold',
+        marginBottom: 4,
+    },
+    requirementRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    requirementText: {
+        fontSize: 12,
+        fontFamily: 'Comfortaa_400Regular',
     },
     errorContainer: {
         flexDirection: 'row',
@@ -280,7 +368,7 @@ const styles = StyleSheet.create({
     },
     strengthContainer: {
         marginTop: -8,
-        marginBottom: 16,
+        marginBottom: 8,
     },
     strengthBars: {
         flexDirection: 'row',
@@ -296,6 +384,21 @@ const styles = StyleSheet.create({
         fontFamily: 'Comfortaa_500Medium',
         textTransform: 'capitalize',
         marginTop: 6,
+    },
+    feedbackContainer: {
+        borderLeftWidth: 3,
+        paddingLeft: 12,
+        marginBottom: 16,
+        gap: 4,
+    },
+    feedbackRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    feedbackText: {
+        fontSize: 12,
+        fontFamily: 'Comfortaa_400Regular',
     },
     footer: {
         flexDirection: 'row',

@@ -1,12 +1,10 @@
 import { Button } from '@/components/ui/Button';
-import { Modal } from '@/components/ui/Modal';
-import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Alert, KeyboardAvoidingView, Linking, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Animated, {
     Easing,
     interpolate,
@@ -21,12 +19,7 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 export default function WaitingAreaPage() {
     const { theme } = useTheme();
     const { t } = useTranslation();
-    const { verifyEmail } = useAuth();
     const router = useRouter();
-
-    const [isVerifying, setIsVerifying] = useState(false);
-    const [showSuccessModal, setShowSuccessModal] = useState(false);
-    const [redirectCountdown, setRedirectCountdown] = useState(5);
 
     // Resend states
     const [isResending, setIsResending] = useState(false);
@@ -58,64 +51,11 @@ export default function WaitingAreaPage() {
         }
     }, [resendCooldown]);
 
-    // Handle deep link verification
-    const handleDeepLink = useCallback(async (url: string) => {
-        try {
-            const urlObj = new URL(url);
-            const token = urlObj.searchParams.get('token');
-
-            if (token && (urlObj.pathname === 'verify-email' || url.includes('verify-email'))) {
-                setIsVerifying(true);
-                await verifyEmail(token);
-                setShowSuccessModal(true);
-            }
-        } catch (error: any) {
-            Alert.alert(
-                t('waitingArea.verificationFailed'),
-                error.message || t('waitingArea.invalidLink')
-            );
-        } finally {
-            setIsVerifying(false);
-        }
-    }, [verifyEmail, t]);
-
-    // Listen for deep links
-    useEffect(() => {
-        Linking.getInitialURL().then((url) => {
-            if (url) handleDeepLink(url);
-        });
-
-        const subscription = Linking.addEventListener('url', ({ url }) => {
-            handleDeepLink(url);
-        });
-
-        return () => subscription.remove();
-    }, [handleDeepLink]);
-
-    // Redirect countdown after success
-    useEffect(() => {
-        if (!showSuccessModal) return;
-
-        const interval = setInterval(() => {
-            setRedirectCountdown((prev) => {
-                if (prev <= 1) {
-                    clearInterval(interval);
-                    router.replace('/(auth)/login');
-                    return 0;
-                }
-                return prev - 1;
-            });
-        }, 1000);
-
-        return () => clearInterval(interval);
-    }, [showSuccessModal, router]);
-
     // Resend verification email
     const handleResend = async () => {
         if (resendCooldown > 0 || isResending || !userEmail) {
             if (!userEmail) {
-                Alert.alert('Email Required', 'Please enter your email to resend verification.');
-                return;
+                Alert.alert(t('auth.emailRequired'), t('auth.emailRequiredDesc'));
             }
             return;
         }
@@ -133,21 +73,21 @@ export default function WaitingAreaPage() {
             const data = await response.json();
 
             if (response.ok) {
-                setResendMessage(t('waitingArea.verificationSent') || 'Verification email sent!');
+                setResendMessage(t('waitingArea.emailSent'));
                 setResendCooldown(60);
             } else if (data.code === 'VERIFICATION_PENDING') {
                 const match = data.error?.match(/(\d+) seconds/);
                 const seconds = match ? parseInt(match[1]) : 60;
                 setResendCooldown(seconds);
-                setResendMessage(`Please wait ${seconds}s before resending`);
+                setResendMessage(t('waitingArea.pleaseWait', { seconds }));
             } else if (data.code === 'EMAIL_ALREADY_VERIFIED') {
-                setResendMessage('Email is already verified. You can log in.');
+                setResendMessage(t('waitingArea.alreadyVerified'));
                 setTimeout(() => router.replace('/(auth)/login'), 2000);
             } else {
-                setResendMessage(data.error || 'Failed to resend');
+                setResendMessage(data.error || t('errors.default'));
             }
         } catch (error) {
-            setResendMessage('Network error. Please try again.');
+            setResendMessage(t('auth.networkError'));
         } finally {
             setIsResending(false);
         }
@@ -200,7 +140,7 @@ export default function WaitingAreaPage() {
                             <View style={[styles.infoCard, { backgroundColor: theme.colors.surface }]}>
                                 <Ionicons name="time-outline" size={22} color={theme.colors.accent} />
                                 <Text style={[styles.infoText, { color: theme.colors.textMuted }]}>
-                                    Your verification link is valid for 24 hours
+                                    {t('waitingArea.linkExpires')}
                                 </Text>
                             </View>
 
@@ -215,7 +155,7 @@ export default function WaitingAreaPage() {
                         {/* Resend section */}
                         <View style={[styles.resendSection, { backgroundColor: theme.colors.surface }]}>
                             <Text style={[styles.resendLabel, { color: theme.colors.textMuted }]}>
-                                Didn't receive the email?
+                                {t('waitingArea.didntReceive')}
                             </Text>
 
                             <View style={styles.resendInputRow}>
@@ -225,7 +165,7 @@ export default function WaitingAreaPage() {
                                         style={[styles.emailInputField, { color: theme.colors.text }]}
                                         value={userEmail}
                                         onChangeText={setUserEmail}
-                                        placeholder="Enter your email"
+                                        placeholder={t('waitingArea.enterYourEmail')}
                                         placeholderTextColor={theme.colors.textMuted}
                                         autoCapitalize="none"
                                         keyboardType="email-address"
@@ -246,10 +186,10 @@ export default function WaitingAreaPage() {
                             >
                                 <Text style={[styles.resendButtonText, { color: resendCooldown > 0 ? theme.colors.textMuted : '#fff' }]}>
                                     {isResending
-                                        ? 'Sending...'
+                                        ? t('waitingArea.sending')
                                         : resendCooldown > 0
-                                            ? `Resend in ${resendCooldown}s`
-                                            : 'Resend Verification Email'}
+                                            ? t('waitingArea.resendInSeconds', { seconds: resendCooldown })
+                                            : t('waitingArea.resendButton')}
                                 </Text>
                             </TouchableOpacity>
 
@@ -272,28 +212,6 @@ export default function WaitingAreaPage() {
                     </View>
                 </ScrollView>
             </KeyboardAvoidingView>
-
-            {/* Success Modal */}
-            <Modal
-                visible={showSuccessModal}
-                onClose={() => { }}
-                title={t('waitingArea.emailVerified')}
-                message={t('waitingArea.verifiedMessage', { seconds: redirectCountdown })}
-                confirmText={`${t('common.continue')} (${redirectCountdown})`}
-                onConfirm={() => router.replace('/(auth)/login')}
-                showCancel={false}
-            />
-
-            {/* Loading overlay */}
-            {isVerifying && (
-                <View style={[styles.overlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
-                    <View style={[styles.loadingCard, { backgroundColor: theme.colors.surface }]}>
-                        <Text style={[styles.loadingText, { color: theme.colors.text }]}>
-                            {t('waitingArea.verifying')}
-                        </Text>
-                    </View>
-                </View>
-            )}
         </View>
     );
 }
@@ -422,18 +340,5 @@ const styles = StyleSheet.create({
     actions: {
         width: '100%',
         gap: 12,
-    },
-    overlay: {
-        ...StyleSheet.absoluteFillObject,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    loadingCard: {
-        padding: 24,
-        borderRadius: 16,
-    },
-    loadingText: {
-        fontSize: 16,
-        fontFamily: 'Comfortaa_500Medium',
     },
 });

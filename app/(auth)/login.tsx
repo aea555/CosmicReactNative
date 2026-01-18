@@ -5,6 +5,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     KeyboardAvoidingView,
     Platform,
@@ -18,6 +19,7 @@ import {
 export default function LoginPage() {
     const { theme } = useTheme();
     const { login } = useAuth();
+    const { t } = useTranslation();
     const router = useRouter();
 
     const [email, setEmail] = useState('');
@@ -27,7 +29,7 @@ export default function LoginPage() {
 
     const handleLogin = async () => {
         if (!email || !password) {
-            setError('Please enter your email and master password');
+            setError(t('auth.enterCredentials'));
             return;
         }
 
@@ -38,7 +40,7 @@ export default function LoginPage() {
             await login(email, password);
             router.replace('/(main)/vault');
         } catch (err: any) {
-            setError(err.message || 'Login failed. Please try again.');
+            setError(err.message || t('errors.loginFailed'));
         } finally {
             setIsLoading(false);
         }
@@ -68,10 +70,10 @@ export default function LoginPage() {
                         <Text style={[styles.logoText, { color: theme.colors.accent }]}>C</Text>
                     </View>
                     <Text style={[styles.title, { color: theme.colors.text }]}>
-                        Welcome back
+                        {t('auth.welcomeBack')}
                     </Text>
                     <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>
-                        Sign in to access your vault
+                        {t('auth.signInToVault')}
                     </Text>
                 </View>
 
@@ -88,8 +90,8 @@ export default function LoginPage() {
                 {/* Form */}
                 <View style={styles.form}>
                     <Input
-                        label="Email"
-                        placeholder="you@example.com"
+                        label={t('auth.email')}
+                        placeholder={t('auth.emailPlaceholder')}
                         value={email}
                         onChangeText={setEmail}
                         keyboardType="email-address"
@@ -99,8 +101,8 @@ export default function LoginPage() {
                     />
 
                     <Input
-                        label="Master Password"
-                        placeholder="Enter your master password"
+                        label={t('auth.masterPassword')}
+                        placeholder={t('auth.passwordPlaceholder')}
                         value={password}
                         onChangeText={setPassword}
                         isPassword
@@ -109,7 +111,7 @@ export default function LoginPage() {
                     />
 
                     <Button
-                        title="Sign In"
+                        title={t('auth.signIn')}
                         onPress={handleLogin}
                         loading={isLoading}
                         disabled={isLoading}
@@ -122,12 +124,12 @@ export default function LoginPage() {
                 {/* Register Link */}
                 <View style={styles.footer}>
                     <Text style={[styles.footerText, { color: theme.colors.textMuted }]}>
-                        Don't have an account?{' '}
+                        {t('auth.dontHaveAccount')}{' '}
                     </Text>
                     <Link href="/(auth)/register" asChild>
                         <TouchableOpacity>
                             <Text style={[styles.footerLink, { color: theme.colors.accent }]}>
-                                Create one
+                                {t('auth.createAccount')}
                             </Text>
                         </TouchableOpacity>
                     </Link>
@@ -138,7 +140,7 @@ export default function LoginPage() {
                     <Link href="/(auth)/resend-verification" asChild>
                         <TouchableOpacity>
                             <Text style={[styles.secondaryLink, { color: theme.colors.textMuted }]}>
-                                Resend verification email
+                                {t('auth.resendVerification')}
                             </Text>
                         </TouchableOpacity>
                     </Link>

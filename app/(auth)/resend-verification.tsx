@@ -20,7 +20,7 @@ export default function ResendVerificationPage() {
 
   const handleResend = async () => {
     if (!email) {
-      setMessage({ type: 'error', text: 'Please enter your email' });
+      setMessage({ type: 'error', text: t('auth.enterEmail') });
       return;
     }
 
@@ -37,17 +37,18 @@ export default function ResendVerificationPage() {
       const data = await response.json();
 
       if (response.ok) {
-        setMessage({ type: 'success', text: t('waitingArea.emailSent') || 'Verification email sent!' });
+        setMessage({ type: 'success', text: t('waitingArea.emailSent') });
       } else if (data.code === 'VERIFICATION_PENDING') {
-        // Extract seconds if available
-        setMessage({ type: 'error', text: data.error || 'Please wait before resending.' });
+        const match = data.error?.match(/(\d+) seconds/);
+        const seconds = match ? parseInt(match[1]) : 60;
+        setMessage({ type: 'error', text: t('waitingArea.pleaseWait', { seconds }) });
       } else if (data.code === 'EMAIL_ALREADY_VERIFIED') {
         setMessage({ type: 'success', text: t('waitingArea.alreadyVerified') });
       } else {
-        setMessage({ type: 'error', text: data.error || 'Failed to resend' });
+        setMessage({ type: 'error', text: data.error || t('errors.default') });
       }
     } catch (error) {
-      setMessage({ type: 'error', text: 'Network error. Please try again.' });
+      setMessage({ type: 'error', text: t('auth.networkError') });
     } finally {
       setIsLoading(false);
     }
@@ -63,12 +64,14 @@ export default function ResendVerificationPage() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
           </TouchableOpacity>
-          <Text style={[styles.title, { color: theme.colors.text }]}>Resend Verification</Text>
+          <Text style={[styles.title, { color: theme.colors.text }]}>
+            {t('auth.resendVerificationTitle')}
+          </Text>
         </View>
 
         <View style={styles.content}>
           <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-            Enter your email address to receive a new verification link.
+            {t('auth.resendVerificationDesc')}
           </Text>
 
           <Input
@@ -108,7 +111,6 @@ export default function ResendVerificationPage() {
   );
 }
 
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -128,8 +130,9 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontFamily: 'Comfortaa_700Bold',
+    flexShrink: 1,
   },
   content: {
     flex: 1,

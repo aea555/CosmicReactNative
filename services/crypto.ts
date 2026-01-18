@@ -3,6 +3,14 @@
  */
 
 import * as Crypto from 'expo-crypto';
+import 'react-native-get-random-values';
+import * as nacl from 'tweetnacl';
+import * as naclUtil from 'tweetnacl-util';
+
+// Configure tweetnacl to use expo-crypto's PRNG
+nacl.setPRNG((x: Uint8Array, n: number) => {
+    Crypto.getRandomValues(x);
+});
 
 // Character sets for password generation
 const LOWERCASE = 'abcdefghijklmnopqrstuvwxyz';
@@ -55,7 +63,7 @@ export async function generatePassword(options: PasswordOptions = DEFAULT_PASSWO
     return password;
 }
 
-// Word list for passphrase generation (common words, easy to type)
+// Word list for passphrase generation
 const WORDLIST = [
     'apple', 'brave', 'cloud', 'dream', 'eagle', 'flame', 'grape', 'heart', 'inbox', 'jolly',
     'karma', 'lemon', 'maple', 'noble', 'ocean', 'piano', 'queen', 'river', 'storm', 'tiger',
@@ -123,109 +131,144 @@ export async function generateSecret(options: SecretOptions = DEFAULT_SECRET_OPT
     const randomBytes = await Crypto.getRandomBytesAsync(options.byteSize);
 
     if (options.encoding === 'base64') {
-        // Convert Uint8Array to base64
         const binary = String.fromCharCode(...randomBytes);
         return btoa(binary);
     }
 
-    // Convert to hex
     return Array.from(randomBytes)
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
 }
 
-// SSH Key generation (Ed25519 - simplified JS implementation)
-// Note: For production, consider using a native module for better security
+// SSH Key generation using Ed25519 via tweetnacl
 export interface SSHKeyPair {
     publicKey: string;
     privateKey: string;
     fingerprint: string;
 }
 
+const toBase64 = (arr: Uint8Array) => naclUtil.encodeBase64(arr);
+
+// Helper to write a string with 4-byte big-endian length prefix
+const writeString = (s: string): Uint8Array => {
+    const buf = new Uint8Array(4 + s.length);
+    new DataView(buf.buffer).setUint32(0, s.length, false);
+    for (let i = 0; i < s.length; i++) buf[4 + i] = s.charCodeAt(i);
+    return buf;
+};
+
+// Helper to write a buffer with 4-byte big-endian length prefix
+const writeBuffer = (b: Uint8Array): Uint8Array => {
+    const buf = new Uint8Array(4 + b.length);
+    new DataView(buf.buffer).setUint32(0, b.length, false);
+    buf.set(b, 4);
+    return buf;
+};
+
+// Concatenate multiple Uint8Arrays
+const concat = (...bufs: Uint8Array[]): Uint8Array => {
+    const total = bufs.reduce((acc, b) => acc + b.length, 0);
+    const res = new Uint8Array(total);
+    let offset = 0;
+    for (const b of bufs) {
+        res.set(b, offset);
+        offset += b.length;
+    }
+    return res;
+};
+
 export async function generateSSHKey(): Promise<SSHKeyPair> {
-    // Generate 32 random bytes for the seed
-    const seed = await Crypto.getRandomBytesAsync(32);
+    // Generate real Ed25519 key pair using tweetnacl
+    const keyPair = nacl.sign.keyPair();
 
-    // For a proper Ed25519 implementation, we'd use a crypto library
-    // This is a simplified placeholder that generates valid-looking keys
-    const privateKeyBytes = seed;
-    const publicKeyBytes = await Crypto.getRandomBytesAsync(32);
+    // Build the public key blob: type string + public key bytes
+    const keyTypeStr = writeString("ssh-ed25519");
+    const pubKeyBlob = concat(keyTypeStr, writeBuffer(keyPair.publicKey));
 
-    // Format as OpenSSH keys
-    const publicKeyB64 = btoa(String.fromCharCode(...publicKeyBytes));
-    const privateKeyB64 = btoa(String.fromCharCode(...privateKeyBytes));
+    // Format public key: ssh-ed25519 <base64(blob)> <comment>
+    const publicKey = `ssh-ed25519 ${toBase64(pubKeyBlob)} cosmic-vault-generated`;
 
-    // Generate fingerprint (SHA256 of public key)
+    // Build OpenSSH private key format
+    const MAGIC = new Uint8Array([
+        0x6f, 0x70, 0x65, 0x6e, 0x73, 0x73, 0x68, 0x2d, 0x6b, 0x65, 0x79, 0x2d, 0x76, 0x31, 0x00
+    ]); // "openssh-key-v1\0"
+
+    // Generate random check integers (must match)
+    const checkBytes = new Uint8Array(4);
+    Crypto.getRandomValues(checkBytes);
+
+    // Private key section: check1 + check2 + keytype + pubkey + privkey + comment + padding
+    const privKeySection = concat(
+        checkBytes,
+        checkBytes, // check2 must equal check1
+        keyTypeStr,
+        writeBuffer(keyPair.publicKey),
+        writeBuffer(keyPair.secretKey), // 64 bytes: seed (32) + public (32)
+        writeString("cosmic-vault-generated")
+    );
+
+    // Add padding to align to 8 bytes
+    const paddingLen = 8 - (privKeySection.length % 8);
+    const padding = new Uint8Array(paddingLen);
+    for (let i = 0; i < paddingLen; i++) padding[i] = i + 1;
+    const paddedPrivSection = concat(privKeySection, padding);
+
+    // Assemble the full private key blob
+    const privateKeyBlob = concat(
+        MAGIC,
+        writeString("none"),                    // cipher
+        writeString("none"),                    // kdf
+        writeBuffer(new Uint8Array(0)),         // kdf options (empty)
+        new Uint8Array([0, 0, 0, 1]),           // number of keys
+        writeBuffer(pubKeyBlob),                // public key
+        writeBuffer(paddedPrivSection)          // private key section
+    );
+
+    // Format as PEM with 70-char line wrapping
+    const b64Body = toBase64(privateKeyBlob);
+    const wrappedBody = b64Body.match(/.{1,70}/g)?.join('\n') || b64Body;
+    const privateKey = `-----BEGIN OPENSSH PRIVATE KEY-----\n${wrappedBody}\n-----END OPENSSH PRIVATE KEY-----`;
+
+    // Generate fingerprint: SHA256 of the public key blob
     const digestHex = await Crypto.digestStringAsync(
         Crypto.CryptoDigestAlgorithm.SHA256,
-        publicKeyB64
+        toBase64(pubKeyBlob)
     );
-    const fingerprint = `SHA256:${digestHex.slice(0, 43)}`;
+    const fingerprintBytes = new Uint8Array(
+        digestHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
+    );
+    const fingerprint = `SHA256:${toBase64(fingerprintBytes).replace(/=+$/, '')}`;
 
-    const publicKey = `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA${publicKeyB64} cosmic-vault-generated`;
-
-    const privateKey = `-----BEGIN OPENSSH PRIVATE KEY-----
-b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
-${privateKeyB64}
------END OPENSSH PRIVATE KEY-----`;
-
-    return {
-        publicKey,
-        privateKey,
-        fingerprint,
-    };
+    return { publicKey, privateKey, fingerprint };
 }
 
-// Utility function to calculate password strength
+// Password strength calculator
 export function calculatePasswordStrength(password: string): {
     score: number;
     label: 'weak' | 'fair' | 'good' | 'strong' | 'very-strong';
     feedback: string[];
 } {
-    let score = 0;
-    const feedback: string[] = [];
-
-    // Length checks
-    if (password.length >= 8) score += 1;
-    if (password.length >= 12) score += 1;
-    if (password.length >= 16) score += 1;
-    if (password.length < 8) feedback.push('Use at least 8 characters');
-
-    // Character type checks
-    if (/[a-z]/.test(password)) score += 1;
-    else feedback.push('Add lowercase letters');
-
-    if (/[A-Z]/.test(password)) score += 1;
-    else feedback.push('Add uppercase letters');
-
-    if (/[0-9]/.test(password)) score += 1;
-    else feedback.push('Add numbers');
-
-    if (/[^a-zA-Z0-9]/.test(password)) score += 1;
-    else feedback.push('Add special characters');
-
-    // Variety check
-    const uniqueChars = new Set(password).size;
-    if (uniqueChars >= password.length * 0.7) score += 1;
-
-    // Common pattern penalties
-    if (/^[a-zA-Z]+$/.test(password)) score -= 1;
-    if (/^[0-9]+$/.test(password)) score -= 2;
-    if (/(.)\1{2,}/.test(password)) {
-        score -= 1;
-        feedback.push('Avoid repeated characters');
-    }
-
-    // Normalize score
-    score = Math.max(0, Math.min(4, Math.floor(score / 2)));
-
-    const labels: Array<'weak' | 'fair' | 'good' | 'strong' | 'very-strong'> = [
-        'weak', 'fair', 'good', 'strong', 'very-strong'
+    const checks = [
+        { met: password.length >= 12, label: 'passwordTooShort' },
+        { met: /[A-Z]/.test(password), label: 'passwordNoUppercase' },
+        { met: /[a-z]/.test(password), label: 'passwordNoLowercase' },
+        { met: /[0-9]/.test(password), label: 'passwordNoNumber' },
+        { met: /[^a-zA-Z0-9]/.test(password), label: 'passwordNoSpecial' },
     ];
 
-    return {
-        score,
-        label: labels[score],
-        feedback: feedback.slice(0, 3),
-    };
+    const unmetChecks = checks.filter(c => !c.met);
+    const feedback = unmetChecks.map(c => c.label);
+
+    let score = 0;
+    if (unmetChecks.length === 0) {
+        score = 2;
+        if (password.length >= 16) score += 1;
+        if (password.length >= 20) score += 1;
+    }
+
+    const labels: Array<'weak' | 'fair' | 'good' | 'strong' | 'very-strong'> = [
+        'weak', 'weak', 'fair', 'good', 'strong'
+    ];
+
+    return { score, label: labels[score], feedback };
 }

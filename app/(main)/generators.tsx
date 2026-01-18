@@ -388,7 +388,7 @@ export default function GeneratorsPage() {
                                     ))}
                                 </View>
                                 <Text style={[styles.strengthLabel, { color: getStrengthColor(strength.label) }]}>
-                                    {strength.label.replace('-', ' ')}
+                                    {t(`generators.strength.${strength.label === 'very-strong' ? 'veryStrong' : strength.label}`)}
                                 </Text>
                             </View>
                         )}
