@@ -119,7 +119,7 @@ export default function SettingsPage() {
                                         },
                                     ]}
                                 >
-                                    {sub.charAt(0).toUpperCase() + sub.slice(1)}
+                                    {t(`settings.themes.${sub}`)}
                                 </Text>
                                 {theme.subTheme === sub && (
                                     <Ionicons name="checkmark-circle" size={18} color={getSubThemeColor(sub)} />

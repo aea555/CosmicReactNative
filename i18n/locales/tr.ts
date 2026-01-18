@@ -171,6 +171,15 @@ export default {
         version: 'Sürüm',
         build: 'Yapı',
         madeWith: 'Cosmic tarafından 💜 ile geliştirildi',
+        themes: {
+            crimson: 'Kızıl',
+            emerald: 'Zümrüt',
+            zinc: 'Çinko',
+            slate: 'Arduvaz',
+            milk: 'Süt',
+            sandstorm: 'Kum Fırtınası',
+            lavender: 'Lavanta',
+        },
     },
     errors: {
         invalidCredentials: 'Geçersiz e-posta veya şifre',

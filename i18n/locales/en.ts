@@ -171,6 +171,15 @@ export default {
         version: 'Version',
         build: 'Build',
         madeWith: 'Made with 💜 by Cosmic',
+        themes: {
+            crimson: 'Crimson',
+            emerald: 'Emerald',
+            zinc: 'Zinc',
+            slate: 'Slate',
+            milk: 'Milk',
+            sandstorm: 'Sandstorm',
+            lavender: 'Lavender',
+        },
     },
     errors: {
         invalidCredentials: 'Invalid email or password',

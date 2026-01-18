@@ -27,6 +27,7 @@ function NavigationGuard({ children }: { children: React.ReactNode }) {
   const { authState, isLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const { theme } = useTheme();
 
   useEffect(() => {
     if (isLoading) return;
@@ -51,6 +52,13 @@ function NavigationGuard({ children }: { children: React.ReactNode }) {
       }
     }
   }, [authState, segments, isLoading]);
+
+  // Don't render anything until auth state is determined to prevent flash
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.colors.bg }} />
+    );
+  }
 
   return <>{children}</>;
 }
