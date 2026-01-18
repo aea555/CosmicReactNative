@@ -5,17 +5,19 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { api, Note, Secret } from '@/services/api';
 import { useFavoritesStore } from '@/stores/favorites';
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
     ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
+import Markdown from 'react-native-markdown-display';
 
 export default function VaultDetailPage() {
     const { t } = useTranslation();
@@ -23,36 +25,24 @@ export default function VaultDetailPage() {
     const router = useRouter();
     const { id, type } = useLocalSearchParams<{ id: string; type: 'secret' | 'note' }>();
 
-    const [item, setItem] = useState<Secret | Note | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
     const [deleteModalVisible, setDeleteModalVisible] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
 
     const { isSecretFavorited, isNoteFavorited, toggleSecretFavorite, toggleNoteFavorite } =
         useFavoritesStore();
 
+    // Combined query to fetch either secret or note
+    const { data: item, isLoading, error } = useQuery({
+        queryKey: type === 'secret' ? ['secret', id] : ['note', id],
+        queryFn: () => {
+            if (!id) return null;
+            return type === 'secret' ? api.getSecret(id) : api.getNote(id);
+        },
+        enabled: !!id,
+    });
+
     const isFavorited =
         type === 'secret' ? isSecretFavorited(id || '') : isNoteFavorited(id || '');
-
-    useEffect(() => {
-        async function loadItem() {
-            if (!id) return;
-            try {
-                if (type === 'secret') {
-                    const secret = await api.getSecret(id);
-                    setItem(secret);
-                } else {
-                    const note = await api.getNote(id);
-                    setItem(note);
-                }
-            } catch (error) {
-                console.error('Failed to load item:', error);
-            } finally {
-                setIsLoading(false);
-            }
-        }
-        loadItem();
-    }, [id, type]);
 
     const handleDelete = async () => {
         if (!id) return;
@@ -150,6 +140,9 @@ export default function VaultDetailPage() {
         );
     };
 
+
+    // ... (inside component)
+
     const renderNoteDetail = (note: Note) => (
         <>
             <View style={styles.noteHeader}>
@@ -164,11 +157,28 @@ export default function VaultDetailPage() {
 
             {note.content && (
                 <View style={[styles.contentBox, { backgroundColor: theme.colors.surface }]}>
-                    <Text style={[styles.contentText, { color: theme.colors.text }]}>
+                    <Markdown
+                        style={{
+                            body: { color: theme.colors.text, fontFamily: 'Comfortaa_400Regular' },
+                            heading1: { color: theme.colors.accent, fontFamily: 'Comfortaa_700Bold' },
+                            heading2: { color: theme.colors.accent, fontFamily: 'Comfortaa_700Bold' },
+                            code_inline: { backgroundColor: theme.colors.surfaceElevated, color: theme.colors.text },
+                            code_block: { backgroundColor: theme.colors.surfaceElevated, color: theme.colors.text },
+                        }}
+                    >
                         {note.content}
-                    </Text>
+                    </Markdown>
                 </View>
             )}
+
+            <View style={{ marginTop: 20 }}>
+                <Button
+                    title={t('common.edit')}
+                    onPress={() => router.push(`/(main)/vault/editor?id=${note.id}`)}
+                    variant="primary"
+                    icon={<Ionicons name="create-outline" size={18} color="#fff" />}
+                />
+            </View>
         </>
     );
 

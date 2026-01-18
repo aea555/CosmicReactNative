@@ -60,8 +60,8 @@ class ApiService {
         if (response.status === 401 && requiresAuth) {
             const data = await response.json();
 
-            // Only attempt refresh for expired tokens, not for invalid credentials
-            if (data.code === 'INVALID_TOKEN') {
+            // Attempt refresh on any 401 when auth is required
+            if (requiresAuth) {
                 const refreshSuccess = await this.attemptTokenRefresh();
 
                 if (refreshSuccess) {
@@ -121,6 +121,7 @@ class ApiService {
     private async handleRefreshFailure(): Promise<void> {
         const logout = (globalThis as any).__cosmicLogout;
         if (logout) {
+            console.log('Refresh failed, logging out...');
             await logout();
         }
     }

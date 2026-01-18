@@ -45,7 +45,7 @@ export default function MainLayout() {
             }}
         >
             <Tabs.Screen
-                name="vault/index"
+                name="vault"
                 options={{
                     title: t('vault.title'),
                     tabBarIcon: ({ color, size, focused }) => (
@@ -75,13 +75,6 @@ export default function MainLayout() {
                             <Ionicons name={focused ? 'settings' : 'settings-outline'} size={24} color={color} />
                         </View>
                     ),
-                }}
-            />
-            {/* Hidden screens */}
-            <Tabs.Screen
-                name="vault/[id]"
-                options={{
-                    href: null,
                 }}
             />
         </Tabs>

@@ -109,6 +109,11 @@ function RootLayoutNav() {
   );
 }
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+// Initialize QueryClient
+const queryClient = new QueryClient();
+
 export default function RootLayout() {
   const [showSplash, setShowSplash] = useState(true);
   const [appIsReady, setAppIsReady] = useState(false);
@@ -140,13 +145,15 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <NavigationGuard>
-          <RootLayoutNav />
-        </NavigationGuard>
-      </AuthProvider>
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <AuthProvider>
+          <NavigationGuard>
+            <RootLayoutNav />
+          </NavigationGuard>
+        </AuthProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
   );
 }
 

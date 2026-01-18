@@ -117,6 +117,11 @@ export default {
         noteContentPlaceholder: 'Note content...',
         created: 'Created',
         updated: 'Updated',
+        editor: 'Editor',
+        preview: 'Preview',
+        titleRequired: 'Title is required',
+        noteTitlePlaceholder: 'Note Title...',
+        noContent: 'No content to preview',
     },
     generators: {
         title: 'Generators',
@@ -198,5 +203,15 @@ export default {
         loginFailed: 'Login failed. Please try again.',
         registrationFailed: 'Registration failed. Please try again.',
         default: 'Something went wrong. Please try again.',
+    },
+    markdown: {
+        headingPlaceholder: '# Heading ',
+        boldPlaceholder: '**bold** ',
+        italicPlaceholder: '*italic* ',
+        listPlaceholder: '- List item\n',
+        codePlaceholder: '`code` ',
+        quotePlaceholder: '> Quote\n',
+        linkPlaceholder: '[Link Text](url) ',
+        imagePlaceholder: '![Alt Text](url) ',
     },
 };

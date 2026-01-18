@@ -117,6 +117,11 @@ export default {
         noteContentPlaceholder: 'Not içeriği...',
         created: 'Oluşturulma',
         updated: 'Güncellenme',
+        editor: 'Düzenleyici',
+        preview: 'Önizleme',
+        titleRequired: 'Başlık gereklidir',
+        noteTitlePlaceholder: 'Not Başlığı...',
+        noContent: 'Önizlenecek içerik yok',
     },
     generators: {
         title: 'Üreticiler',
@@ -198,5 +203,15 @@ export default {
         loginFailed: 'Giriş başarısız. Lütfen tekrar deneyin.',
         registrationFailed: 'Kayıt başarısız. Lütfen tekrar deneyin.',
         default: 'Bir şeyler yanlış gitti. Lütfen tekrar deneyin.',
+    },
+    markdown: {
+        headingPlaceholder: '# Başlık ',
+        boldPlaceholder: '**kalın** ',
+        italicPlaceholder: '*italik* ',
+        listPlaceholder: '- Liste öğesi\n',
+        codePlaceholder: '`kod` ',
+        quotePlaceholder: '> Alıntı\n',
+        linkPlaceholder: '[Bağlantı Metni](url) ',
+        imagePlaceholder: '![Alternatif Metin](url) ',
     },
 };

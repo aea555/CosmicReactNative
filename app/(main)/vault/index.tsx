@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { api, Note, Secret } from '@/services/api';
 import { Ionicons } from '@expo/vector-icons';
-import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -24,14 +24,6 @@ import {
 type ItemType = 'secret' | 'note';
 
 // Create query client
-const queryClient = new QueryClient({
-    defaultOptions: {
-        queries: {
-            staleTime: 1000 * 60, // 1 minute
-            retry: 2,
-        },
-    },
-});
 
 function VaultContent() {
     const { t } = useTranslation();
@@ -322,6 +314,10 @@ function VaultContent() {
         // Include favoriteKey to force re-render on favorite changes
     }, [filteredSecrets, filteredNotes, showSecrets, showNotes, favoriteKey]);
 
+    const handleEditNote = (note: Note) => {
+        router.push(`/(main)/vault/editor?id=${note.id}`);
+    };
+
     const renderItem = useCallback(
         ({ item }: { item: { item: Secret | Note; type: ItemType } }) => {
             if (item.type === 'secret') {
@@ -343,7 +339,7 @@ function VaultContent() {
                 <NoteItem
                     note={item.item as Note}
                     onPress={() => router.push(`/(main)/vault/${item.item.id}?type=note`)}
-                    onEdit={() => openEditModal('note', item.item)}
+                    onEdit={() => handleEditNote(item.item as Note)}
                     onClone={() => cloneNoteMutation.mutate(item.item as Note)}
                     onDelete={() => {
                         setDeleteTarget({ type: 'note', id: item.item.id });
@@ -389,7 +385,13 @@ function VaultContent() {
                                     <Ionicons name="lock-closed-outline" size={18} color={theme.colors.text} />
                                     <Text style={[styles.createMenuText, { color: theme.colors.text }]}>{t('vault.newSecret')}</Text>
                                 </TouchableOpacity>
-                                <TouchableOpacity style={styles.createMenuItem} onPress={() => openCreateModal('note')}>
+                                <TouchableOpacity
+                                    style={styles.createMenuItem}
+                                    onPress={() => {
+                                        router.push('/(main)/vault/editor');
+                                        setShowCreateMenu(false);
+                                    }}
+                                >
                                     <Ionicons name="document-text-outline" size={18} color={theme.colors.text} />
                                     <Text style={[styles.createMenuText, { color: theme.colors.text }]}>{t('vault.newNote')}</Text>
                                 </TouchableOpacity>
@@ -484,56 +486,43 @@ function VaultContent() {
                         onChangeText={(v) => setFormData({ ...formData, title: v })}
                         placeholder={t('vault.enterTitle')}
                     />
-                    {createType === 'secret' ? (
-                        <>
-                            <Input
-                                label={t('vault.url')}
-                                value={formData.url}
-                                onChangeText={(v) => setFormData({ ...formData, url: v })}
-                                placeholder="https://example.com"
-                                keyboardType="url"
-                                autoCapitalize="none"
-                            />
-                            <Input
-                                label={t('auth.email')}
-                                value={formData.email}
-                                onChangeText={(v) => setFormData({ ...formData, email: v })}
-                                placeholder={t('auth.emailPlaceholder')}
-                                keyboardType="email-address"
-                                autoCapitalize="none"
-                            />
-                            <Input
-                                label={t('vault.username')}
-                                value={formData.username}
-                                onChangeText={(v) => setFormData({ ...formData, username: v })}
-                                placeholder={t('vault.username')}
-                                autoCapitalize="none"
-                            />
-                            <Input
-                                label={t('vault.password')}
-                                value={formData.password}
-                                onChangeText={(v) => setFormData({ ...formData, password: v })}
-                                placeholder={t('vault.password')}
-                                isPassword
-                            />
-                            <Input
-                                label={t('vault.phone')}
-                                value={formData.telephone_number}
-                                onChangeText={(v) => setFormData({ ...formData, telephone_number: v })}
-                                placeholder="+1234567890"
-                                keyboardType="phone-pad"
-                            />
-                        </>
-                    ) : (
-                        <Input
-                            label={t('vault.content')}
-                            value={formData.content}
-                            onChangeText={(v) => setFormData({ ...formData, content: v })}
-                            placeholder={t('vault.noteContentPlaceholder')}
-                            multiline
-                            numberOfLines={4}
-                        />
-                    )}
+                    <Input
+                        label={t('vault.url')}
+                        value={formData.url}
+                        onChangeText={(v) => setFormData({ ...formData, url: v })}
+                        placeholder="https://example.com"
+                        keyboardType="url"
+                        autoCapitalize="none"
+                    />
+                    <Input
+                        label={t('auth.email')}
+                        value={formData.email}
+                        onChangeText={(v) => setFormData({ ...formData, email: v })}
+                        placeholder={t('auth.emailPlaceholder')}
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                    />
+                    <Input
+                        label={t('vault.username')}
+                        value={formData.username}
+                        onChangeText={(v) => setFormData({ ...formData, username: v })}
+                        placeholder={t('vault.username')}
+                        autoCapitalize="none"
+                    />
+                    <Input
+                        label={t('vault.password')}
+                        value={formData.password}
+                        onChangeText={(v) => setFormData({ ...formData, password: v })}
+                        placeholder={t('vault.password')}
+                        isPassword
+                    />
+                    <Input
+                        label={t('vault.phone')}
+                        value={formData.telephone_number}
+                        onChangeText={(v) => setFormData({ ...formData, telephone_number: v })}
+                        placeholder="+1234567890"
+                        keyboardType="phone-pad"
+                    />
                 </ScrollView>
             </Modal>
 
@@ -541,7 +530,7 @@ function VaultContent() {
             <Modal
                 visible={editModalVisible}
                 onClose={() => setEditModalVisible(false)}
-                title={editTarget?.type === 'secret' ? t('vault.editSecret') : t('vault.editNote')}
+                title={t('vault.editSecret')}
                 confirmText={t('common.save')}
                 onConfirm={handleUpdate}
             >
@@ -552,50 +541,37 @@ function VaultContent() {
                         onChangeText={(v) => setFormData({ ...formData, title: v })}
                         placeholder={t('vault.enterTitle')}
                     />
-                    {editTarget?.type === 'secret' ? (
-                        <>
-                            <Input
-                                label={t('vault.url')}
-                                value={formData.url}
-                                onChangeText={(v) => setFormData({ ...formData, url: v })}
-                                placeholder="https://example.com"
-                            />
-                            <Input
-                                label={t('auth.email')}
-                                value={formData.email}
-                                onChangeText={(v) => setFormData({ ...formData, email: v })}
-                                placeholder={t('auth.emailPlaceholder')}
-                            />
-                            <Input
-                                label={t('vault.username')}
-                                value={formData.username}
-                                onChangeText={(v) => setFormData({ ...formData, username: v })}
-                                placeholder={t('vault.username')}
-                            />
-                            <Input
-                                label={t('vault.password')}
-                                value={formData.password}
-                                onChangeText={(v) => setFormData({ ...formData, password: v })}
-                                placeholder={t('vault.password')}
-                                isPassword
-                            />
-                            <Input
-                                label={t('vault.phone')}
-                                value={formData.telephone_number}
-                                onChangeText={(v) => setFormData({ ...formData, telephone_number: v })}
-                                placeholder="+1234567890"
-                            />
-                        </>
-                    ) : (
-                        <Input
-                            label={t('vault.content')}
-                            value={formData.content}
-                            onChangeText={(v) => setFormData({ ...formData, content: v })}
-                            placeholder={t('vault.noteContentPlaceholder')}
-                            multiline
-                            numberOfLines={4}
-                        />
-                    )}
+                    <Input
+                        label={t('vault.url')}
+                        value={formData.url}
+                        onChangeText={(v) => setFormData({ ...formData, url: v })}
+                        placeholder="https://example.com"
+                    />
+                    <Input
+                        label={t('auth.email')}
+                        value={formData.email}
+                        onChangeText={(v) => setFormData({ ...formData, email: v })}
+                        placeholder={t('auth.emailPlaceholder')}
+                    />
+                    <Input
+                        label={t('vault.username')}
+                        value={formData.username}
+                        onChangeText={(v) => setFormData({ ...formData, username: v })}
+                        placeholder={t('vault.username')}
+                    />
+                    <Input
+                        label={t('vault.password')}
+                        value={formData.password}
+                        onChangeText={(v) => setFormData({ ...formData, password: v })}
+                        placeholder={t('vault.password')}
+                        isPassword
+                    />
+                    <Input
+                        label={t('vault.phone')}
+                        value={formData.telephone_number}
+                        onChangeText={(v) => setFormData({ ...formData, telephone_number: v })}
+                        placeholder="+1234567890"
+                    />
                 </ScrollView>
             </Modal>
         </View>
@@ -603,11 +579,7 @@ function VaultContent() {
 }
 
 export default function VaultPage() {
-    return (
-        <QueryClientProvider client={queryClient}>
-            <VaultContent />
-        </QueryClientProvider>
-    );
+    return <VaultContent />;
 }
 
 const styles = StyleSheet.create({
