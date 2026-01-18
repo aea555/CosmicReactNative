@@ -1,8 +1,9 @@
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://api-cosmic.clbio.org';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 // Auth states
 export type AuthState = 'NOT_AUTHENTICATED' | 'AUTHENTICATED' | 'WAITING_FOR_VERIFICATION';
@@ -43,6 +44,28 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const [refreshToken, setRefreshToken] = useState<string | null>(null);
     const [masterPassword, setMasterPasswordState] = useState<string | null>(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const { t } = useTranslation();
+
+    // Error message mapping
+    const getErrorMessage = (code: string | undefined, fallback: string): string => {
+        const messages: Record<string, string> = {
+            'INVALID_CREDENTIALS': t('errors.invalidCredentials'),
+            'INVALID_TOKEN': t('errors.sessionExpired'),
+            'MASTER_PASSWORD_REQUIRED': t('errors.masterPasswordRequired'),
+            'EMAIL_NOT_VERIFIED': t('errors.emailNotVerified'),
+            'RATE_LIMITED': t('errors.rateLimited'),
+            'USER_EXISTS': t('errors.userExists'),
+            'SECRET_NOT_FOUND': t('errors.secretNotFound'),
+            'NOTE_NOT_FOUND': t('errors.noteNotFound'),
+            'VALIDATION_ERROR': t('errors.validationError'),
+            'INTERNAL_ERROR': t('errors.internalError'),
+            'INVALID_VERIFICATION_TOKEN': t('errors.invalidVerificationToken'),
+            'TOKEN_REUSED': t('errors.tokenReused'),
+            'TOKEN_EXPIRED': t('errors.tokenExpired'),
+        };
+
+        return messages[code || ''] || fallback || t('errors.default');
+    };
 
     // Load tokens on mount
     useEffect(() => {
@@ -248,25 +271,6 @@ export function useAuth() {
     return context;
 }
 
-// Error message mapping
-function getErrorMessage(code: string | undefined, fallback: string): string {
-    const messages: Record<string, string> = {
-        'INVALID_CREDENTIALS': 'Invalid email or password',
-        'INVALID_TOKEN': 'Session expired. Please log in again',
-        'MASTER_PASSWORD_REQUIRED': 'Master password is required',
-        'EMAIL_NOT_VERIFIED': 'Please verify your email first',
-        'RATE_LIMITED': 'Too many attempts. Please wait a moment',
-        'USER_EXISTS': 'An account with this email already exists',
-        'SECRET_NOT_FOUND': 'Item not found',
-        'NOTE_NOT_FOUND': 'Note not found',
-        'VALIDATION_ERROR': 'Please check your input and try again',
-        'INTERNAL_ERROR': 'Something went wrong. Please try again later',
-        'INVALID_VERIFICATION_TOKEN': 'Verification link is invalid or expired',
-        'TOKEN_REUSED': 'Security alert: Please log in again',
-        'TOKEN_EXPIRED': 'Session expired. Please log in again',
-    };
 
-    return messages[code || ''] || fallback || 'Something went wrong. Please try again.';
-}
 
 export { API_BASE_URL };

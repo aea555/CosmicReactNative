@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     ScrollView,
     StyleSheet,
@@ -17,6 +18,7 @@ import {
 } from 'react-native';
 
 export default function VaultDetailPage() {
+    const { t } = useTranslation();
     const { theme } = useTheme();
     const router = useRouter();
     const { id, type } = useLocalSearchParams<{ id: string; type: 'secret' | 'note' }>();
@@ -97,7 +99,7 @@ export default function VaultDetailPage() {
                 <View style={styles.fields}>
                     {secret.url && (
                         <DetailRow
-                            label="URL"
+                            label={t('vault.url')}
                             value={secret.url}
                             icon="globe-outline"
                             onCopy={() => copyToClipboard(secret.url!)}
@@ -106,7 +108,7 @@ export default function VaultDetailPage() {
                     )}
                     {secret.email && (
                         <DetailRow
-                            label="Email"
+                            label={t('auth.email')}
                             value={secret.email}
                             icon="mail-outline"
                             onCopy={() => copyToClipboard(secret.email!)}
@@ -115,7 +117,7 @@ export default function VaultDetailPage() {
                     )}
                     {secret.username && (
                         <DetailRow
-                            label="Username"
+                            label={t('vault.username')}
                             value={secret.username}
                             icon="person-outline"
                             onCopy={() => copyToClipboard(secret.username!)}
@@ -124,7 +126,7 @@ export default function VaultDetailPage() {
                     )}
                     {secret.password && (
                         <DetailRow
-                            label="Password"
+                            label={t('vault.password')}
                             value={showPassword ? secret.password : '••••••••••••'}
                             icon="lock-closed-outline"
                             onCopy={() => copyToClipboard(secret.password!)}
@@ -136,7 +138,7 @@ export default function VaultDetailPage() {
                     )}
                     {secret.telephone_number && (
                         <DetailRow
-                            label="Phone"
+                            label={t('vault.phone')}
                             value={secret.telephone_number}
                             icon="call-outline"
                             onCopy={() => copyToClipboard(secret.telephone_number!)}
@@ -155,7 +157,7 @@ export default function VaultDetailPage() {
                 <Text style={[styles.title, { color: theme.colors.text }]}>{note.title}</Text>
                 {isFavorited && (
                     <Text style={[styles.favoriteLabel, { color: theme.colors.warning }]}>
-                        ⭐ Favorited
+                        ⭐ {t('common.favorited')}
                     </Text>
                 )}
             </View>
@@ -173,7 +175,7 @@ export default function VaultDetailPage() {
     if (isLoading) {
         return (
             <View style={[styles.container, styles.centered, { backgroundColor: theme.colors.bg }]}>
-                <Text style={{ color: theme.colors.textMuted }}>Loading...</Text>
+                <Text style={{ color: theme.colors.textMuted }}>{t('common.loading')}</Text>
             </View>
         );
     }
@@ -181,7 +183,7 @@ export default function VaultDetailPage() {
     if (!item) {
         return (
             <View style={[styles.container, styles.centered, { backgroundColor: theme.colors.bg }]}>
-                <Text style={{ color: theme.colors.textMuted }}>Item not found</Text>
+                <Text style={{ color: theme.colors.textMuted }}>{t('vault.itemNotFound')}</Text>
             </View>
         );
     }
@@ -194,7 +196,7 @@ export default function VaultDetailPage() {
                     <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
                 </TouchableOpacity>
                 <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-                    {type === 'secret' ? 'Secret' : 'Note'}
+                    {type === 'secret' ? t('vault.secret') : t('vault.note')}
                 </Text>
                 <View style={{ width: 44 }} />
             </View>
@@ -211,23 +213,23 @@ export default function VaultDetailPage() {
                 {/* Timestamps */}
                 <View style={styles.timestamps}>
                     <Text style={[styles.timestamp, { color: theme.colors.textMuted }]}>
-                        Created: {new Date(item.created_at).toLocaleDateString()}
+                        {t('common.created')} {new Date(item.created_at).toLocaleDateString()}
                     </Text>
                     <Text style={[styles.timestamp, { color: theme.colors.textMuted }]}>
-                        Updated: {new Date(item.updated_at).toLocaleDateString()}
+                        {t('common.updated')} {new Date(item.updated_at).toLocaleDateString()}
                     </Text>
                 </View>
 
                 {/* Actions */}
                 <View style={styles.actions}>
                     <Button
-                        title={isFavorited ? 'Unfavorite' : 'Favorite'}
+                        title={isFavorited ? t('common.unfavorite') : t('common.favorite')}
                         onPress={handleToggleFavorite}
                         variant="outline"
                         icon={<Ionicons name={isFavorited ? 'star' : 'star-outline'} size={18} color={theme.colors.accent} />}
                     />
                     <Button
-                        title="Delete"
+                        title={t('common.delete')}
                         onPress={() => setDeleteModalVisible(true)}
                         variant="danger"
                         icon={<Ionicons name="trash-outline" size={18} color="#fff" />}
@@ -238,9 +240,9 @@ export default function VaultDetailPage() {
             <Modal
                 visible={deleteModalVisible}
                 onClose={() => setDeleteModalVisible(false)}
-                title="Delete Item"
-                message="Are you sure you want to delete this item? This action cannot be undone."
-                confirmText="Delete"
+                title={t('vault.deleteItem')}
+                message={t('vault.deleteConfirm')}
+                confirmText={t('common.delete')}
                 onConfirm={handleDelete}
                 variant="danger"
             />

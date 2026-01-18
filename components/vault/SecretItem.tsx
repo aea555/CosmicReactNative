@@ -5,6 +5,7 @@ import { useFavoritesStore } from '@/stores/favorites';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     Dimensions,
     Modal,
@@ -27,14 +28,16 @@ interface SecretItemProps {
 }
 
 export function SecretItem({ secret, onPress, onEdit, onClone, onDelete, onFavoriteToggle }: SecretItemProps) {
+    const { t } = useTranslation();
     const { theme } = useTheme();
-    const { isSecretFavorited, toggleSecretFavorite } = useFavoritesStore();
+    const isFavorited = useFavoritesStore((state) => state.favoriteSecretIds.has(secret.id));
+    const toggleSecretFavorite = useFavoritesStore((state) => state.toggleSecretFavorite);
     const [showMenu, setShowMenu] = React.useState(false);
     const [menuPosition, setMenuPosition] = React.useState({ top: 0, right: 0 });
     const menuButtonRef = React.useRef<View>(null);
 
-    const isFavorited = isSecretFavorited(secret.id);
     const domainColor = getDomainColor(secret.url);
+
 
     const secondaryText = secret.email || secret.username || secret.telephone_number || '';
 
@@ -131,7 +134,7 @@ export function SecretItem({ secret, onPress, onEdit, onClone, onDelete, onFavor
                                 onPress={() => { onEdit(); setShowMenu(false); }}
                             >
                                 <Ionicons name="pencil-outline" size={16} color={theme.colors.text} />
-                                <Text style={[styles.menuText, { color: theme.colors.text }]}>Edit</Text>
+                                <Text style={[styles.menuText, { color: theme.colors.text }]}>{t('common.edit')}</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
@@ -139,7 +142,7 @@ export function SecretItem({ secret, onPress, onEdit, onClone, onDelete, onFavor
                                 onPress={() => { onClone(); setShowMenu(false); }}
                             >
                                 <Ionicons name="copy-outline" size={16} color={theme.colors.text} />
-                                <Text style={[styles.menuText, { color: theme.colors.text }]}>Clone</Text>
+                                <Text style={[styles.menuText, { color: theme.colors.text }]}>{t('common.clone')}</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
@@ -152,7 +155,7 @@ export function SecretItem({ secret, onPress, onEdit, onClone, onDelete, onFavor
                                     color={isFavorited ? theme.colors.warning : theme.colors.text}
                                 />
                                 <Text style={[styles.menuText, { color: theme.colors.text }]}>
-                                    {isFavorited ? 'Unfavorite' : 'Favorite'}
+                                    {isFavorited ? t('common.unfavorite') : t('common.favorite')}
                                 </Text>
                             </TouchableOpacity>
 
@@ -161,7 +164,7 @@ export function SecretItem({ secret, onPress, onEdit, onClone, onDelete, onFavor
                                 onPress={() => { onDelete(); setShowMenu(false); }}
                             >
                                 <Ionicons name="trash-outline" size={16} color={theme.colors.error} />
-                                <Text style={[styles.menuText, { color: theme.colors.error }]}>Delete</Text>
+                                <Text style={[styles.menuText, { color: theme.colors.error }]}>{t('common.delete')}</Text>
                             </TouchableOpacity>
                         </View>
                     </View>

@@ -132,6 +132,17 @@ export default function LoginPage() {
                         </TouchableOpacity>
                     </Link>
                 </View>
+
+                {/* Resend Verification Link */}
+                <View style={styles.footerLinkContainer}>
+                    <Link href="/(auth)/resend-verification" asChild>
+                        <TouchableOpacity>
+                            <Text style={[styles.secondaryLink, { color: theme.colors.textMuted }]}>
+                                Resend verification email
+                            </Text>
+                        </TouchableOpacity>
+                    </Link>
+                </View>
             </ScrollView>
         </KeyboardAvoidingView>
     );
@@ -210,5 +221,14 @@ const styles = StyleSheet.create({
     footerLink: {
         fontSize: 14,
         fontFamily: 'Comfortaa_700Bold',
+    },
+    footerLinkContainer: {
+        alignItems: 'center',
+        marginTop: 16,
+    },
+    secondaryLink: {
+        fontSize: 13,
+        fontFamily: 'Comfortaa_500Medium',
+        textDecorationLine: 'underline',
     },
 });

@@ -3,9 +3,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function SettingsPage() {
+    const { t } = useTranslation();
     const { theme, setThemeMode, setSubTheme, availableSubThemes } = useTheme();
     const { logout } = useAuth();
 
@@ -28,7 +30,7 @@ export default function SettingsPage() {
         <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
             {/* Header */}
             <View style={styles.header}>
-                <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Settings</Text>
+                <Text style={[styles.headerTitle, { color: theme.colors.text }]}>{t('settings.title')}</Text>
             </View>
 
             <ScrollView
@@ -38,7 +40,7 @@ export default function SettingsPage() {
             >
                 {/* Theme Mode */}
                 <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Theme</Text>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('settings.theme')}</Text>
                     <View style={styles.themeToggle}>
                         <TouchableOpacity
                             style={[
@@ -60,7 +62,7 @@ export default function SettingsPage() {
                                     { color: theme.mode === 'dark' ? '#fff' : theme.colors.textMuted },
                                 ]}
                             >
-                                Dark
+                                {t('settings.dark')}
                             </Text>
                         </TouchableOpacity>
 
@@ -84,7 +86,7 @@ export default function SettingsPage() {
                                     { color: theme.mode === 'light' ? '#fff' : theme.colors.textMuted },
                                 ]}
                             >
-                                Light
+                                {t('settings.light')}
                             </Text>
                         </TouchableOpacity>
                     </View>
@@ -92,7 +94,7 @@ export default function SettingsPage() {
 
                 {/* Sub-Theme */}
                 <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Color Scheme</Text>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('settings.colorScheme')}</Text>
                     <View style={styles.subThemeGrid}>
                         {availableSubThemes.map((sub) => (
                             <TouchableOpacity
@@ -129,24 +131,24 @@ export default function SettingsPage() {
 
                 {/* Preview */}
                 <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Preview</Text>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('settings.preview')}</Text>
                     <View style={[styles.previewCard, { backgroundColor: theme.colors.surface }]}>
                         <View style={styles.previewRow}>
                             <View style={[styles.previewDot, { backgroundColor: theme.colors.accent }]} />
                             <Text style={[styles.previewText, { color: theme.colors.text }]}>
-                                Accent color
+                                {t('settings.accentColor')}
                             </Text>
                         </View>
                         <View style={styles.previewRow}>
                             <View style={[styles.previewDot, { backgroundColor: theme.colors.success }]} />
                             <Text style={[styles.previewText, { color: theme.colors.textMuted }]}>
-                                Success indicator
+                                {t('settings.successIndicator')}
                             </Text>
                         </View>
                         <View style={styles.previewRow}>
                             <View style={[styles.previewDot, { backgroundColor: theme.colors.error }]} />
                             <Text style={[styles.previewText, { color: theme.colors.textMuted }]}>
-                                Error state
+                                {t('settings.errorState')}
                             </Text>
                         </View>
                     </View>
@@ -154,9 +156,9 @@ export default function SettingsPage() {
 
                 {/* Account */}
                 <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Account</Text>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('settings.account')}</Text>
                     <Button
-                        title="Sign Out"
+                        title={t('settings.signOut')}
                         onPress={logout}
                         variant="outline"
                         fullWidth
@@ -166,15 +168,15 @@ export default function SettingsPage() {
 
                 {/* About */}
                 <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>About</Text>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('settings.about')}</Text>
                     <View style={[styles.aboutCard, { backgroundColor: theme.colors.surface }]}>
                         <View style={styles.aboutRow}>
-                            <Text style={[styles.aboutLabel, { color: theme.colors.textMuted }]}>Version</Text>
+                            <Text style={[styles.aboutLabel, { color: theme.colors.textMuted }]}>{t('settings.version')}</Text>
                             <Text style={[styles.aboutValue, { color: theme.colors.text }]}>1.0.0</Text>
                         </View>
                         <View style={styles.aboutRow}>
                             <Text style={[styles.aboutLabel, { color: theme.colors.textMuted }]}>
-                                Build
+                                {t('settings.build')}
                             </Text>
                             <Text style={[styles.aboutValue, { color: theme.colors.text }]}>
                                 2026.01.18
@@ -186,7 +188,7 @@ export default function SettingsPage() {
                 {/* Footer */}
                 <View style={styles.footer}>
                     <Text style={[styles.footerText, { color: theme.colors.textMuted }]}>
-                        Made with 💜 by Cosmic
+                        {t('settings.madeWith')}
                     </Text>
                 </View>
             </ScrollView>

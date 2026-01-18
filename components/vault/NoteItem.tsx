@@ -3,6 +3,7 @@ import type { Note } from '@/services/api';
 import { useFavoritesStore } from '@/stores/favorites';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     Dimensions,
     Modal,
@@ -25,13 +26,14 @@ interface NoteItemProps {
 }
 
 export function NoteItem({ note, onPress, onEdit, onClone, onDelete, onFavoriteToggle }: NoteItemProps) {
+    const { t } = useTranslation();
     const { theme } = useTheme();
-    const { isNoteFavorited, toggleNoteFavorite } = useFavoritesStore();
+    const isFavorited = useFavoritesStore((state) => state.favoriteNoteIds.has(note.id));
+    const toggleNoteFavorite = useFavoritesStore((state) => state.toggleNoteFavorite);
     const [showMenu, setShowMenu] = React.useState(false);
     const [menuPosition, setMenuPosition] = React.useState({ top: 0, right: 0 });
     const menuButtonRef = React.useRef<View>(null);
 
-    const isFavorited = isNoteFavorited(note.id);
 
     const handleFavorite = () => {
         toggleNoteFavorite(note.id);
@@ -66,7 +68,7 @@ export function NoteItem({ note, onPress, onEdit, onClone, onDelete, onFavoriteT
                     </Text>
                     {isFavorited && (
                         <Text style={[styles.favoriteLabel, { color: theme.colors.warning }]}>
-                            ⭐ Favorited
+                            ⭐ {t('common.favorited')}
                         </Text>
                     )}
                 </View>
@@ -106,7 +108,7 @@ export function NoteItem({ note, onPress, onEdit, onClone, onDelete, onFavoriteT
                                 onPress={() => { onEdit(); setShowMenu(false); }}
                             >
                                 <Ionicons name="pencil-outline" size={16} color={theme.colors.text} />
-                                <Text style={[styles.menuText, { color: theme.colors.text }]}>Edit</Text>
+                                <Text style={[styles.menuText, { color: theme.colors.text }]}>{t('common.edit')}</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
@@ -114,7 +116,7 @@ export function NoteItem({ note, onPress, onEdit, onClone, onDelete, onFavoriteT
                                 onPress={() => { onClone(); setShowMenu(false); }}
                             >
                                 <Ionicons name="copy-outline" size={16} color={theme.colors.text} />
-                                <Text style={[styles.menuText, { color: theme.colors.text }]}>Clone</Text>
+                                <Text style={[styles.menuText, { color: theme.colors.text }]}>{t('common.clone')}</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
@@ -127,7 +129,7 @@ export function NoteItem({ note, onPress, onEdit, onClone, onDelete, onFavoriteT
                                     color={isFavorited ? theme.colors.warning : theme.colors.text}
                                 />
                                 <Text style={[styles.menuText, { color: theme.colors.text }]}>
-                                    {isFavorited ? 'Unfavorite' : 'Favorite'}
+                                    {isFavorited ? t('common.unfavorite') : t('common.favorite')}
                                 </Text>
                             </TouchableOpacity>
 
@@ -136,7 +138,7 @@ export function NoteItem({ note, onPress, onEdit, onClone, onDelete, onFavoriteT
                                 onPress={() => { onDelete(); setShowMenu(false); }}
                             >
                                 <Ionicons name="trash-outline" size={16} color={theme.colors.error} />
-                                <Text style={[styles.menuText, { color: theme.colors.error }]}>Delete</Text>
+                                <Text style={[styles.menuText, { color: theme.colors.error }]}>{t('common.delete')}</Text>
                             </TouchableOpacity>
                         </View>
                     </View>

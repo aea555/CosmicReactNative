@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     FlatList,
     RefreshControl,
@@ -33,6 +34,7 @@ const queryClient = new QueryClient({
 });
 
 function VaultContent() {
+    const { t } = useTranslation();
     const { theme } = useTheme();
     const { getAccessToken, masterPassword } = useAuth();
     const router = useRouter();
@@ -358,7 +360,7 @@ function VaultContent() {
         <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
             {/* Header */}
             <View style={[styles.header, { backgroundColor: theme.colors.bg }]}>
-                <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Vault</Text>
+                <Text style={[styles.headerTitle, { color: theme.colors.text }]}>{t('vault.title')}</Text>
 
                 {/* Search & Create */}
                 <View style={styles.headerActions}>
@@ -366,7 +368,7 @@ function VaultContent() {
                         <Ionicons name="search" size={18} color={theme.colors.textMuted} />
                         <TextInput
                             style={[styles.searchInput, { color: theme.colors.text }]}
-                            placeholder="Search..."
+                            placeholder={t('common.search')}
                             placeholderTextColor={theme.colors.textMuted}
                             value={searchQuery}
                             onChangeText={setSearchQuery}
@@ -385,11 +387,11 @@ function VaultContent() {
                             <View style={[styles.createMenu, { backgroundColor: theme.colors.surfaceElevated }]}>
                                 <TouchableOpacity style={styles.createMenuItem} onPress={() => openCreateModal('secret')}>
                                     <Ionicons name="lock-closed-outline" size={18} color={theme.colors.text} />
-                                    <Text style={[styles.createMenuText, { color: theme.colors.text }]}>New Secret</Text>
+                                    <Text style={[styles.createMenuText, { color: theme.colors.text }]}>{t('vault.newSecret')}</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity style={styles.createMenuItem} onPress={() => openCreateModal('note')}>
                                     <Ionicons name="document-text-outline" size={18} color={theme.colors.text} />
-                                    <Text style={[styles.createMenuText, { color: theme.colors.text }]}>New Note</Text>
+                                    <Text style={[styles.createMenuText, { color: theme.colors.text }]}>{t('vault.newNote')}</Text>
                                 </TouchableOpacity>
                             </View>
                         )}
@@ -399,7 +401,7 @@ function VaultContent() {
 
             {/* Filter buttons */}
             <View style={styles.filterRow}>
-                <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>Include:</Text>
+                <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>{t('vault.include')}</Text>
                 <TouchableOpacity
                     style={[
                         styles.filterButton,
@@ -412,7 +414,7 @@ function VaultContent() {
                 >
                     <Ionicons name="shield-outline" size={16} color={showSecrets ? '#fff' : theme.colors.textMuted} />
                     <Text style={[styles.filterButtonText, { color: showSecrets ? '#fff' : theme.colors.textMuted }]}>
-                        Secrets
+                        {t('vault.secrets')}
                     </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -427,7 +429,7 @@ function VaultContent() {
                 >
                     <Ionicons name="document-text-outline" size={16} color={showNotes ? '#fff' : theme.colors.textMuted} />
                     <Text style={[styles.filterButtonText, { color: showNotes ? '#fff' : theme.colors.textMuted }]}>
-                        Notes
+                        {t('vault.notes')}
                     </Text>
                 </TouchableOpacity>
             </View>
@@ -450,7 +452,7 @@ function VaultContent() {
                     <View style={styles.emptyState}>
                         <Ionicons name="folder-open-outline" size={48} color={theme.colors.textMuted} />
                         <Text style={[styles.emptyText, { color: theme.colors.textMuted }]}>
-                            {isLoading ? 'Loading...' : 'No items found'}
+                            {isLoading ? t('common.loading') : t('vault.noItems')}
                         </Text>
                     </View>
                 }
@@ -460,9 +462,9 @@ function VaultContent() {
             <Modal
                 visible={deleteModalVisible}
                 onClose={() => setDeleteModalVisible(false)}
-                title="Delete Item"
-                message="Are you sure you want to delete this item? This action cannot be undone."
-                confirmText="Delete"
+                title={t('vault.deleteItem')}
+                message={t('vault.deleteConfirm')}
+                confirmText={t('common.delete')}
                 onConfirm={handleDelete}
                 variant="danger"
             />
@@ -471,21 +473,21 @@ function VaultContent() {
             <Modal
                 visible={createModalVisible}
                 onClose={() => setCreateModalVisible(false)}
-                title={createType === 'secret' ? 'New Secret' : 'New Note'}
-                confirmText="Create"
+                title={createType === 'secret' ? t('vault.newSecret') : t('vault.newNote')}
+                confirmText={t('common.create')}
                 onConfirm={handleCreate}
             >
                 <ScrollView style={styles.formScroll} showsVerticalScrollIndicator={false}>
                     <Input
-                        label="Title"
+                        label={t('vault.title_field')}
                         value={formData.title}
                         onChangeText={(v) => setFormData({ ...formData, title: v })}
-                        placeholder="Enter title"
+                        placeholder={t('vault.enterTitle')}
                     />
                     {createType === 'secret' ? (
                         <>
                             <Input
-                                label="URL"
+                                label={t('vault.url')}
                                 value={formData.url}
                                 onChangeText={(v) => setFormData({ ...formData, url: v })}
                                 placeholder="https://example.com"
@@ -493,29 +495,29 @@ function VaultContent() {
                                 autoCapitalize="none"
                             />
                             <Input
-                                label="Email"
+                                label={t('auth.email')}
                                 value={formData.email}
                                 onChangeText={(v) => setFormData({ ...formData, email: v })}
-                                placeholder="you@example.com"
+                                placeholder={t('auth.emailPlaceholder')}
                                 keyboardType="email-address"
                                 autoCapitalize="none"
                             />
                             <Input
-                                label="Username"
+                                label={t('vault.username')}
                                 value={formData.username}
                                 onChangeText={(v) => setFormData({ ...formData, username: v })}
-                                placeholder="username"
+                                placeholder={t('vault.username')}
                                 autoCapitalize="none"
                             />
                             <Input
-                                label="Password"
+                                label={t('vault.password')}
                                 value={formData.password}
                                 onChangeText={(v) => setFormData({ ...formData, password: v })}
-                                placeholder="password"
+                                placeholder={t('vault.password')}
                                 isPassword
                             />
                             <Input
-                                label="Phone"
+                                label={t('vault.phone')}
                                 value={formData.telephone_number}
                                 onChangeText={(v) => setFormData({ ...formData, telephone_number: v })}
                                 placeholder="+1234567890"
@@ -524,10 +526,10 @@ function VaultContent() {
                         </>
                     ) : (
                         <Input
-                            label="Content"
+                            label={t('vault.content')}
                             value={formData.content}
                             onChangeText={(v) => setFormData({ ...formData, content: v })}
-                            placeholder="Note content..."
+                            placeholder={t('vault.noteContentPlaceholder')}
                             multiline
                             numberOfLines={4}
                         />
@@ -539,46 +541,46 @@ function VaultContent() {
             <Modal
                 visible={editModalVisible}
                 onClose={() => setEditModalVisible(false)}
-                title={editTarget?.type === 'secret' ? 'Edit Secret' : 'Edit Note'}
-                confirmText="Save"
+                title={editTarget?.type === 'secret' ? t('vault.editSecret') : t('vault.editNote')}
+                confirmText={t('common.save')}
                 onConfirm={handleUpdate}
             >
                 <ScrollView style={styles.formScroll} showsVerticalScrollIndicator={false}>
                     <Input
-                        label="Title"
+                        label={t('vault.title_field')}
                         value={formData.title}
                         onChangeText={(v) => setFormData({ ...formData, title: v })}
-                        placeholder="Enter title"
+                        placeholder={t('vault.enterTitle')}
                     />
                     {editTarget?.type === 'secret' ? (
                         <>
                             <Input
-                                label="URL"
+                                label={t('vault.url')}
                                 value={formData.url}
                                 onChangeText={(v) => setFormData({ ...formData, url: v })}
                                 placeholder="https://example.com"
                             />
                             <Input
-                                label="Email"
+                                label={t('auth.email')}
                                 value={formData.email}
                                 onChangeText={(v) => setFormData({ ...formData, email: v })}
-                                placeholder="you@example.com"
+                                placeholder={t('auth.emailPlaceholder')}
                             />
                             <Input
-                                label="Username"
+                                label={t('vault.username')}
                                 value={formData.username}
                                 onChangeText={(v) => setFormData({ ...formData, username: v })}
-                                placeholder="username"
+                                placeholder={t('vault.username')}
                             />
                             <Input
-                                label="Password"
+                                label={t('vault.password')}
                                 value={formData.password}
                                 onChangeText={(v) => setFormData({ ...formData, password: v })}
-                                placeholder="password"
+                                placeholder={t('vault.password')}
                                 isPassword
                             />
                             <Input
-                                label="Phone"
+                                label={t('vault.phone')}
                                 value={formData.telephone_number}
                                 onChangeText={(v) => setFormData({ ...formData, telephone_number: v })}
                                 placeholder="+1234567890"
@@ -586,10 +588,10 @@ function VaultContent() {
                         </>
                     ) : (
                         <Input
-                            label="Content"
+                            label={t('vault.content')}
                             value={formData.content}
                             onChangeText={(v) => setFormData({ ...formData, content: v })}
-                            placeholder="Note content..."
+                            placeholder={t('vault.noteContentPlaceholder')}
                             multiline
                             numberOfLines={4}
                         />

@@ -1,12 +1,15 @@
 import { useTheme } from '@/contexts/ThemeContext';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     Dimensions,
+    KeyboardAvoidingView,
+    Platform,
     Modal as RNModal,
     StyleSheet,
     Text,
     TouchableWithoutFeedback,
-    View
+    View,
 } from 'react-native';
 import Animated, {
     useAnimatedStyle,
@@ -36,14 +39,17 @@ export function Modal({
     onClose,
     title,
     message,
-    confirmText = 'Confirm',
-    cancelText = 'Cancel',
+    confirmText,
+    cancelText,
     onConfirm,
     variant = 'default',
     children,
     showCancel = true,
 }: ModalProps) {
+    const { t } = useTranslation();
     const { theme } = useTheme();
+    const effectiveConfirmText = confirmText || t('common.confirm');
+    const effectiveCancelText = cancelText || t('common.cancel');
     const scale = useSharedValue(0.9);
     const opacity = useSharedValue(0);
 
@@ -86,7 +92,11 @@ export function Modal({
                 </View>
             </TouchableWithoutFeedback>
 
-            <View style={styles.centeredView} pointerEvents="box-none">
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={styles.centeredView}
+                pointerEvents="box-none"
+            >
                 <TouchableWithoutFeedback>
                     <Animated.View
                         style={[
@@ -129,14 +139,14 @@ export function Modal({
                         <View style={styles.buttonContainer}>
                             {showCancel && (
                                 <Button
-                                    title={cancelText}
+                                    title={effectiveCancelText}
                                     onPress={onClose}
                                     variant="ghost"
                                     style={styles.button}
                                 />
                             )}
                             <Button
-                                title={confirmText}
+                                title={effectiveConfirmText}
                                 onPress={onConfirm || onClose}
                                 variant={variant === 'danger' ? 'danger' : 'primary'}
                                 style={styles.button}
@@ -144,7 +154,7 @@ export function Modal({
                         </View>
                     </Animated.View>
                 </TouchableWithoutFeedback>
-            </View>
+            </KeyboardAvoidingView>
         </RNModal>
     );
 }

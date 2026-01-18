@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     ScrollView,
     StyleSheet,
@@ -25,6 +26,7 @@ import {
 type GeneratorType = 'password' | 'passphrase' | 'secret' | 'ssh';
 
 export default function GeneratorsPage() {
+    const { t } = useTranslation();
     const { theme } = useTheme();
     const [activeTab, setActiveTab] = useState<GeneratorType>('password');
     const [result, setResult] = useState<string | null>(null);
@@ -107,10 +109,10 @@ export default function GeneratorsPage() {
     };
 
     const tabs: Array<{ key: GeneratorType; label: string; icon: string }> = [
-        { key: 'password', label: 'Password', icon: 'key' },
-        { key: 'passphrase', label: 'Phrase', icon: 'text' },
-        { key: 'secret', label: 'Secret', icon: 'shield' },
-        { key: 'ssh', label: 'SSH Key', icon: 'terminal' },
+        { key: 'password', label: t('generators.tabs.password'), icon: 'key' },
+        { key: 'passphrase', label: t('generators.tabs.passphrase'), icon: 'text' },
+        { key: 'secret', label: t('generators.tabs.secret'), icon: 'shield' },
+        { key: 'ssh', label: t('generators.tabs.ssh'), icon: 'terminal' },
     ];
 
     const strength = result && activeTab === 'password' ? calculatePasswordStrength(result) : null;
@@ -119,41 +121,47 @@ export default function GeneratorsPage() {
         <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
             {/* Header */}
             <View style={styles.header}>
-                <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Generators</Text>
+                <Text style={[styles.headerTitle, { color: theme.colors.text }]}>{t('generators.title')}</Text>
             </View>
 
             {/* Tabs */}
-            <View style={styles.tabs}>
-                {tabs.map((tab) => (
-                    <TouchableOpacity
-                        key={tab.key}
-                        style={[
-                            styles.tab,
-                            {
-                                backgroundColor: activeTab === tab.key ? theme.colors.accent : theme.colors.surface,
-                            },
-                        ]}
-                        onPress={() => {
-                            setActiveTab(tab.key);
-                            setResult(null);
-                            setSSHResult(null);
-                        }}
-                    >
-                        <Ionicons
-                            name={tab.icon as any}
-                            size={16}
-                            color={activeTab === tab.key ? '#fff' : theme.colors.textMuted}
-                        />
-                        <Text
+            <View style={styles.tabsContainer}>
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.tabsContent}
+                >
+                    {tabs.map((tab) => (
+                        <TouchableOpacity
+                            key={tab.key}
                             style={[
-                                styles.tabText,
-                                { color: activeTab === tab.key ? '#fff' : theme.colors.textMuted },
+                                styles.tab,
+                                {
+                                    backgroundColor: activeTab === tab.key ? theme.colors.accent : theme.colors.surface,
+                                },
                             ]}
+                            onPress={() => {
+                                setActiveTab(tab.key);
+                                setResult(null);
+                                setSSHResult(null);
+                            }}
                         >
-                            {tab.label}
-                        </Text>
-                    </TouchableOpacity>
-                ))}
+                            <Ionicons
+                                name={tab.icon as any}
+                                size={16}
+                                color={activeTab === tab.key ? '#fff' : theme.colors.textMuted}
+                            />
+                            <Text
+                                style={[
+                                    styles.tabText,
+                                    { color: activeTab === tab.key ? '#fff' : theme.colors.textMuted },
+                                ]}
+                            >
+                                {tab.label}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
             </View>
 
             <ScrollView
@@ -166,7 +174,7 @@ export default function GeneratorsPage() {
                     <View style={styles.options}>
                         <View style={styles.sliderRow}>
                             <Text style={[styles.optionLabel, { color: theme.colors.text }]}>
-                                Length: {passwordLength}
+                                {t('generators.options.length')} {passwordLength}
                             </Text>
                             <View style={styles.lengthButtons}>
                                 <TouchableOpacity
@@ -185,31 +193,31 @@ export default function GeneratorsPage() {
                         </View>
 
                         <OptionSwitch
-                            label="Lowercase (a-z)"
+                            label={t('generators.options.lowercase')}
                             value={includeLowercase}
                             onValueChange={setIncludeLowercase}
                             theme={theme}
                         />
                         <OptionSwitch
-                            label="Uppercase (A-Z)"
+                            label={t('generators.options.uppercase')}
                             value={includeUppercase}
                             onValueChange={setIncludeUppercase}
                             theme={theme}
                         />
                         <OptionSwitch
-                            label="Numbers (0-9)"
+                            label={t('generators.options.numbers')}
                             value={includeNumbers}
                             onValueChange={setIncludeNumbers}
                             theme={theme}
                         />
                         <OptionSwitch
-                            label="Symbols (!@#$%)"
+                            label={t('generators.options.symbols')}
                             value={includeSymbols}
                             onValueChange={setIncludeSymbols}
                             theme={theme}
                         />
                         <OptionSwitch
-                            label="Exclude ambiguous (l, 1, I, O, 0)"
+                            label={t('generators.options.excludeAmbiguous')}
                             value={excludeAmbiguous}
                             onValueChange={setExcludeAmbiguous}
                             theme={theme}
@@ -222,7 +230,7 @@ export default function GeneratorsPage() {
                     <View style={styles.options}>
                         <View style={styles.sliderRow}>
                             <Text style={[styles.optionLabel, { color: theme.colors.text }]}>
-                                Words: {wordCount}
+                                {t('generators.options.wordCount')} {wordCount}
                             </Text>
                             <View style={styles.lengthButtons}>
                                 <TouchableOpacity
@@ -241,7 +249,7 @@ export default function GeneratorsPage() {
                         </View>
 
                         <View style={styles.separatorRow}>
-                            <Text style={[styles.optionLabel, { color: theme.colors.text }]}>Separator:</Text>
+                            <Text style={[styles.optionLabel, { color: theme.colors.text }]}>{t('generators.options.separator')}</Text>
                             <View style={styles.separatorOptions}>
                                 {['-', '_', '.', ' '].map((sep) => (
                                     <TouchableOpacity
@@ -263,13 +271,13 @@ export default function GeneratorsPage() {
                         </View>
 
                         <OptionSwitch
-                            label="Capitalize words"
+                            label={t('generators.options.capitalize')}
                             value={capitalize}
                             onValueChange={setCapitalize}
                             theme={theme}
                         />
                         <OptionSwitch
-                            label="Include number at end"
+                            label={t('generators.options.includeNumber')}
                             value={includeNumber}
                             onValueChange={setIncludeNumber}
                             theme={theme}
@@ -282,7 +290,7 @@ export default function GeneratorsPage() {
                     <View style={styles.options}>
                         <View style={styles.sliderRow}>
                             <Text style={[styles.optionLabel, { color: theme.colors.text }]}>
-                                Bytes: {byteSize}
+                                {t('generators.options.bytes')} {byteSize}
                             </Text>
                             <View style={styles.lengthButtons}>
                                 <TouchableOpacity
@@ -301,7 +309,7 @@ export default function GeneratorsPage() {
                         </View>
 
                         <View style={styles.separatorRow}>
-                            <Text style={[styles.optionLabel, { color: theme.colors.text }]}>Encoding:</Text>
+                            <Text style={[styles.optionLabel, { color: theme.colors.text }]}>{t('generators.options.encoding')}</Text>
                             <View style={styles.separatorOptions}>
                                 {(['hex', 'base64'] as const).map((enc) => (
                                     <TouchableOpacity
@@ -329,14 +337,14 @@ export default function GeneratorsPage() {
                     <View style={[styles.infoCard, { backgroundColor: theme.colors.surface }]}>
                         <Ionicons name="information-circle-outline" size={20} color={theme.colors.accent} />
                         <Text style={[styles.infoText, { color: theme.colors.textMuted }]}>
-                            Generates an Ed25519 SSH key pair. The private key should be kept secure.
+                            {t('generators.sshInfo')}
                         </Text>
                     </View>
                 )}
 
                 {/* Generate Button */}
                 <Button
-                    title={isGenerating ? 'Generating...' : 'Generate'}
+                    title={isGenerating ? t('generators.generating') : t('generators.generate')}
                     onPress={handleGenerate}
                     loading={isGenerating}
                     fullWidth
@@ -348,10 +356,10 @@ export default function GeneratorsPage() {
                 {result && (
                     <View style={styles.resultSection}>
                         <View style={styles.resultHeader}>
-                            <Text style={[styles.resultLabel, { color: theme.colors.textMuted }]}>Result</Text>
+                            <Text style={[styles.resultLabel, { color: theme.colors.textMuted }]}>{t('generators.result')}</Text>
                             <TouchableOpacity onPress={() => copyToClipboard(result)}>
                                 <Text style={[styles.copyBtn, { color: theme.colors.accent }]}>
-                                    {copied ? 'Copied!' : 'Copy'}
+                                    {copied ? t('common.copied') : t('common.copy')}
                                 </Text>
                             </TouchableOpacity>
                         </View>
@@ -392,10 +400,10 @@ export default function GeneratorsPage() {
                     <View style={styles.resultSection}>
                         <View style={styles.resultHeader}>
                             <Text style={[styles.resultLabel, { color: theme.colors.textMuted }]}>
-                                Public Key
+                                {t('generators.publicKey')}
                             </Text>
                             <TouchableOpacity onPress={() => copyToClipboard(sshResult.publicKey)}>
-                                <Text style={[styles.copyBtn, { color: theme.colors.accent }]}>Copy</Text>
+                                <Text style={[styles.copyBtn, { color: theme.colors.accent }]}>{t('common.copy')}</Text>
                             </TouchableOpacity>
                         </View>
                         <View style={[styles.resultBox, { backgroundColor: theme.colors.surface }]}>
@@ -406,10 +414,10 @@ export default function GeneratorsPage() {
 
                         <View style={[styles.resultHeader, { marginTop: 16 }]}>
                             <Text style={[styles.resultLabel, { color: theme.colors.textMuted }]}>
-                                Private Key
+                                {t('generators.privateKey')}
                             </Text>
                             <TouchableOpacity onPress={() => copyToClipboard(sshResult.privateKey)}>
-                                <Text style={[styles.copyBtn, { color: theme.colors.accent }]}>Copy</Text>
+                                <Text style={[styles.copyBtn, { color: theme.colors.accent }]}>{t('common.copy')}</Text>
                             </TouchableOpacity>
                         </View>
                         <View style={[styles.resultBox, { backgroundColor: theme.colors.surface }]}>
@@ -419,7 +427,7 @@ export default function GeneratorsPage() {
                         </View>
 
                         <Text style={[styles.fingerprint, { color: theme.colors.textMuted }]}>
-                            Fingerprint: {sshResult.fingerprint}
+                            {t('generators.fingerprint')} {sshResult.fingerprint}
                         </Text>
                     </View>
                 )}
@@ -489,23 +497,24 @@ const styles = StyleSheet.create({
         fontSize: 32,
         fontFamily: 'Comfortaa_700Bold',
     },
-    tabs: {
-        flexDirection: 'row',
-        paddingHorizontal: 20,
-        gap: 10,
+    tabsContainer: {
         marginBottom: 16,
     },
+    tabsContent: {
+        paddingHorizontal: 20,
+        gap: 12,
+    },
     tab: {
-        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 10,
-        borderRadius: 10,
-        gap: 6,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderRadius: 12,
+        gap: 8,
     },
     tabText: {
-        fontSize: 12,
+        fontSize: 14,
         fontFamily: 'Comfortaa_500Medium',
     },
     content: {
