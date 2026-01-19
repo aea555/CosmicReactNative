@@ -1,12 +1,13 @@
+import { API_BASE_URL } from '@/config';
+import { api } from '@/services/api';
+import { clearAutofillData } from '@/services/autofillSync';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
-
 // Auth states
-export type AuthState = 'NOT_AUTHENTICATED' | 'AUTHENTICATED' | 'WAITING_FOR_VERIFICATION';
+export type AuthState = 'NOT_AUTHENTICATED' | 'AUTHENTICATED' | 'WAITING_FOR_VERIFICATION' | 'NEEDS_UNLOCK';
 
 interface Tokens {
     accessToken: string;
@@ -28,9 +29,8 @@ interface AuthContextType {
     isRefreshing: boolean;
     setIsRefreshing: (value: boolean) => void;
     refreshTokens: () => Promise<string | null>;
+    unlockVault: (password: string) => Promise<void>;
 }
-
-
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -42,13 +42,13 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
+    const { t } = useTranslation();
     const [authState, setAuthState] = useState<AuthState>('NOT_AUTHENTICATED');
     const [isLoading, setIsLoading] = useState(true);
     const [accessToken, setAccessToken] = useState<string | null>(null);
     const [refreshToken, setRefreshToken] = useState<string | null>(null);
     const [masterPassword, setMasterPasswordState] = useState<string | null>(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
-    const { t } = useTranslation();
 
     // Error message mapping
     const getErrorMessage = (code: string | undefined, fallback: string): string => {
@@ -81,7 +81,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 if (storedAccessToken && storedRefreshToken) {
                     setAccessToken(storedAccessToken);
                     setRefreshToken(storedRefreshToken);
-                    setAuthState('AUTHENTICATED');
+                    // Sync API immediately
+                    api.setAccessToken(storedAccessToken);
+                    // On restart, we don't have the master password, so we need to unlock
+                    setAuthState('NEEDS_UNLOCK');
                 }
             } catch (error) {
                 console.error('Failed to load tokens:', error);
@@ -93,11 +96,25 @@ export function AuthProvider({ children }: AuthProviderProps) {
         loadTokens();
     }, []);
 
+    const unlockVault = async (password: string) => {
+        try {
+            api.setMasterPassword(password);
+            api.setAccessToken(accessToken);
+            setMasterPasswordState(password);
+            setAuthState('AUTHENTICATED');
+        } catch (error) {
+            api.setMasterPassword(null);
+            setMasterPasswordState(null);
+            throw error;
+        }
+    };
+
     const saveTokens = async (tokens: Tokens) => {
         await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, tokens.accessToken);
         await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, tokens.refreshToken);
         setAccessToken(tokens.accessToken);
         setRefreshToken(tokens.refreshToken);
+        api.setAccessToken(tokens.accessToken);
     };
 
     const clearTokens = async () => {
@@ -106,6 +123,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setAccessToken(null);
         setRefreshToken(null);
         setMasterPasswordState(null);
+        api.setAccessToken(null);
+        api.setMasterPassword(null);
     };
 
     const login = async (email: string, password: string) => {
@@ -127,8 +146,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
             expiresIn: data.data.expires_in,
         });
 
+        // IMPORTANT: Set API tokens BEFORE changing auth state
+        // This prevents race condition where vault queries run before token is set
+        api.setAccessToken(data.data.access_token);
+        api.setMasterPassword(password);
+
         // Store master password in memory for vault operations
         setMasterPasswordState(password);
+
+        // NOW trigger navigation by changing auth state (after API is ready)
         setAuthState('AUTHENTICATED');
     };
 
@@ -160,8 +186,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         if (!response.ok) {
             throw new Error(getErrorMessage(data.code, data.error));
         }
-
-        // Success - user should now login
     };
 
     const logout = async () => {
@@ -177,6 +201,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             console.error('Logout API error:', error);
         } finally {
             await clearTokens();
+            // CRITICAL: Clear autofill data to prevent suggestions when logged out
+            await clearAutofillData();
             setAuthState('NOT_AUTHENTICATED');
             router.replace('/(auth)/landing');
         }
@@ -194,53 +220,39 @@ export function AuthProvider({ children }: AuthProviderProps) {
         for (let attempt = 0; attempt < delays.length + 1; attempt++) {
             try {
                 const requestUrl = `${API_BASE_URL}/api/v1/auth/refresh`;
-                const requestBody = { refresh_token: refreshToken };
 
-                console.log('=== Token Refresh Request ===');
-                console.log('URL:', requestUrl);
-                console.log('Body:', JSON.stringify(requestBody, null, 2));
-
+                // We MUST NOT use api.fetchWithAuth here to avoid infinite loops
                 const response = await fetch(requestUrl, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestBody),
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${refreshToken}`
+                    }
                 });
 
-                const responseText = await response.text();
+                const data = await response.json();
 
-                console.log('=== Token Refresh Response ===');
-                console.log('Status:', response.status, response.statusText);
-                console.log('Body:', responseText);
+                if (response.ok && data.data) {
+                    const newAccessToken = data.data.access_token;
+                    const newRefreshToken = data.data.refresh_token;
 
-                // Try to parse as JSON
-                let data;
-                try {
-                    data = JSON.parse(responseText);
-                } catch (parseError) {
-                    console.error('Failed to parse response as JSON:', parseError);
-                    throw new Error(`Non-JSON response: ${responseText.substring(0, 200)}`);
+                    // Update local state
+                    setAccessToken(newAccessToken);
+                    setRefreshToken(newRefreshToken);
+
+                    // Update storage
+                    await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, newAccessToken);
+                    await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, newRefreshToken);
+
+                    // Update API service
+                    api.setAccessToken(newAccessToken);
+
+                    return newAccessToken;
                 }
 
-                if (response.ok && data.success) {
-                    await saveTokens({
-                        accessToken: data.data.access_token,
-                        refreshToken: data.data.refresh_token,
-                        expiresIn: data.data.expires_in,
-                    });
-                    console.log('Token refresh successful');
-                    return data.data.access_token;
-                }
-
-                // Non-retriable errors - don't attempt again
-                const nonRetriableErrors = [
-                    'TOKEN_REUSED',
-                    'TOKEN_EXPIRED',
-                    'INVALID_TOKEN',
-                    'VALIDATION_ERROR',
-                    'INVALID_REQUEST_BODY',
-                ];
-
-                if (nonRetriableErrors.includes(data.code)) {
+                // If we get here, response was not OK
+                if (response.status === 401 || data.code === 'INVALID_TOKEN' || data.code === 'TOKEN_EXPIRED') {
+                    // Refresh token is invalid/expired - stop retrying
                     console.warn(`Token refresh failed with non-retriable error: ${data.code} - ${data.error}`);
                     return null;
                 }
@@ -301,6 +313,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 isRefreshing,
                 setIsRefreshing,
                 refreshTokens,
+                unlockVault,
             }}
         >
             {children}

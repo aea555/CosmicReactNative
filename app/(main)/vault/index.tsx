@@ -4,7 +4,9 @@ import { NoteItem } from '@/components/vault/NoteItem';
 import { SecretItem } from '@/components/vault/SecretItem';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import { api, Note, Secret } from '@/services/api';
+import { useAutoProcessPendingSaves } from '@/hooks/useAutofillPendingSaves';
+import { Note, Secret, api } from '@/services/api';
+import { syncVaultToAutofill } from '@/services/autofillSync';
 import { useFavoritesStore } from '@/stores/favorites';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -42,6 +44,19 @@ function VaultContent() {
     const [showSecrets, setShowSecrets] = useState(true);
     const [showNotes, setShowNotes] = useState(true);
     const [editNoteId, setEditNoteId] = useState<string | null>(null);
+
+    // React Query - Secrets
+    const {
+        data: secrets = [],
+        isLoading: secretsLoading,
+        refetch: refetchSecrets,
+    } = useQuery({
+        queryKey: ['secrets'],
+        queryFn: () => api.getSecrets(),
+    });
+
+    // Autofill - Auto Process Pending Saves (No UI)
+    useAutoProcessPendingSaves(secrets);
 
     // Import State
     const [showImportConfirm, setShowImportConfirm] = useState(false);
@@ -86,15 +101,14 @@ function VaultContent() {
         if (masterPassword) api.setMasterPassword(masterPassword);
     }, [getAccessToken, masterPassword]);
 
-    // React Query - Secrets
-    const {
-        data: secrets = [],
-        isLoading: secretsLoading,
-        refetch: refetchSecrets,
-    } = useQuery({
-        queryKey: ['secrets'],
-        queryFn: () => api.getSecrets(),
-    });
+
+
+    // Sync to Autofill whenever secrets update
+    useEffect(() => {
+        if (secrets.length > 0) {
+            syncVaultToAutofill(secrets);
+        }
+    }, [secrets]);
 
     // React Query - Notes
     const {
@@ -750,21 +764,13 @@ function VaultContent() {
                 title={t('vault.deleteItem')}
                 visible={deleteModalVisible}
                 onClose={() => setDeleteModalVisible(false)}
-            >
-                <View style={styles.modalContent}>
-                    <Text style={[styles.modalText, { color: theme.colors.text }]}>
-                        {t('vault.deleteConfirm')}
-                    </Text>
-                    <View style={styles.modalButtons}>
-                        <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setDeleteModalVisible(false)}>
-                            <Text style={styles.buttonText}>{t('common.cancel')}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={[styles.modalButton, { backgroundColor: theme.colors.error }]} onPress={handleDelete}>
-                            <Text style={styles.buttonText}>{t('common.delete')}</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </Modal>
+                message={t('vault.deleteConfirm')}
+                confirmText={t('common.delete')}
+                onConfirm={handleDelete}
+                cancelText={t('common.cancel')}
+                showCancel={true}
+                variant="danger"
+            />
 
             {/* Import Confirm Modal */}
             <Modal

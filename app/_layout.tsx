@@ -55,6 +55,11 @@ function NavigationGuard({ children }: { children: React.ReactNode }) {
         router.replace('/(auth)/waiting-area');
         needsRedirect = true;
       }
+    } else if (authState === 'NEEDS_UNLOCK') {
+      if (inMainGroup || isAtRoot) {
+        router.replace('/(auth)/unlock');
+        needsRedirect = true;
+      }
     }
 
     // Only mark as navigated after redirect logic completes

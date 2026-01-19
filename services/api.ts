@@ -2,7 +2,7 @@
  * API Service with automatic token refresh and error handling
  */
 
-import { API_BASE_URL } from '@/contexts/AuthContext';
+import { API_BASE_URL } from '@/config';
 
 interface ApiOptions extends RequestInit {
     requiresAuth?: boolean;
@@ -116,21 +116,32 @@ class ApiService {
         return data as unknown as T;
     }
 
+    private refreshPromise: Promise<string | null> | null = null;
+
     private async attemptTokenRefresh(): Promise<string | null> {
-        const refreshFn = (globalThis as any).__cosmicRefreshTokens;
-        const setRefreshing = (globalThis as any).__cosmicSetRefreshing;
-
-        if (!refreshFn) return null;
-
-        try {
-            setRefreshing?.(true);
-            const token = await refreshFn();
-            return token;
-        } catch {
-            return null;
-        } finally {
-            setRefreshing?.(false);
+        if (this.refreshPromise) {
+            return this.refreshPromise;
         }
+
+        this.refreshPromise = (async () => {
+            const refreshFn = (globalThis as any).__cosmicRefreshTokens;
+            const setRefreshing = (globalThis as any).__cosmicSetRefreshing;
+
+            if (!refreshFn) return null;
+
+            try {
+                setRefreshing?.(true);
+                const token = await refreshFn();
+                return token;
+            } catch {
+                return null;
+            } finally {
+                setRefreshing?.(false);
+                this.refreshPromise = null;
+            }
+        })();
+
+        return this.refreshPromise;
     }
 
     private async handleRefreshFailure(): Promise<void> {
