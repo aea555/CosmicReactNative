@@ -8,10 +8,13 @@ import { api, Note, Secret } from '@/services/api';
 import { useFavoritesStore } from '@/stores/favorites';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+    ActivityIndicator,
     FlatList,
     RefreshControl,
     ScrollView,
@@ -21,6 +24,8 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+
+
 
 type ItemType = 'secret' | 'note';
 
@@ -36,8 +41,18 @@ function VaultContent() {
     const [searchQuery, setSearchQuery] = useState('');
     const [showSecrets, setShowSecrets] = useState(true);
     const [showNotes, setShowNotes] = useState(true);
+    const [editNoteId, setEditNoteId] = useState<string | null>(null);
+
+    // Import State
+    const [showImportConfirm, setShowImportConfirm] = useState(false);
+    const [isImporting, setIsImporting] = useState(false);
+    const [importProgress, setImportProgress] = useState({ current: 0, total: 0, successCount: 0, skipped: 0 });
+    const [importQueue, setImportQueue] = useState<any[]>([]);
+    const [importError, setImportError] = useState<{ title: string; error: string } | null>(null);
+    const [stopImportRequested, setStopImportRequested] = useState(false);
     const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
     const [showCreateMenu, setShowCreateMenu] = useState(false);
+    const [feedbackModal, setFeedbackModal] = useState<{ visible: boolean; title: string; message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
     // Get favorites store
     const favoriteSecretIds = useFavoritesStore((state) => state.favoriteSecretIds);
@@ -302,6 +317,218 @@ function VaultContent() {
         setShowCreateMenu(false);
     };
 
+    // --- Import Logic ---
+
+    const parseGoogleCSV = (content: string) => {
+        const lines = content.split(/\r\n|\n/);
+        const headers = lines[0].toLowerCase().split(',');
+        const result = [];
+
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            if (!line.trim()) continue;
+
+            const values: string[] = [];
+            let inQuote = false;
+            let currentValue = '';
+
+            for (let j = 0; j < line.length; j++) {
+                const char = line[j];
+                const nextChar = line[j + 1];
+
+                if (char === '"') {
+                    if (inQuote && nextChar === '"') {
+                        currentValue += '"';
+                        j++;
+                    } else {
+                        inQuote = !inQuote;
+                    }
+                } else if (char === ',' && !inQuote) {
+                    values.push(currentValue);
+                    currentValue = '';
+                } else {
+                    currentValue += char;
+                }
+            }
+            values.push(currentValue);
+
+            const entry: any = {};
+            headers.forEach((header, index) => {
+                const value = values[index]?.trim();
+                // Map common Google export headers
+                if (header === 'name') entry.title = value;
+                else if (header === 'url') entry.url = value;
+                else if (header === 'username') entry.username = value;
+                else if (header === 'password') entry.password = value;
+                else if (header === 'note') entry.note = value; // Notes are not currently supported in Secret entity, maybe append to title? Or ignore.
+            });
+
+            if (entry.title && entry.password) {
+                result.push(entry);
+            }
+        }
+        return result;
+    };
+
+    const isSecretDuplicate = (newSecret: any, existingSecret: Secret) => {
+        // Precise comparison of key fields
+        // Note: CSV fields are strings, API fields might be null/undefined. Treat null/undefined as empty string.
+        const sTitle = existingSecret.title || '';
+        const sUsername = existingSecret.username || '';
+        const sPassword = existingSecret.password || '';
+        const sUrl = existingSecret.url || '';
+
+        const nTitle = newSecret.title || '';
+        const nUsername = newSecret.username || '';
+        const nPassword = newSecret.password || '';
+        const nUrl = newSecret.url || '';
+
+        return sTitle === nTitle && sUsername === nUsername && sPassword === nPassword && sUrl === nUrl;
+    };
+
+    const processImportQueue = async (queue: any[], startIndex: number, skippedCount: number) => {
+        setIsImporting(true);
+        setImportProgress(prev => ({ ...prev, total: queue.length, current: startIndex, skipped: skippedCount }));
+
+        for (let i = startIndex; i < queue.length; i++) {
+            if (stopImportRequested) {
+                break;
+            }
+
+            const item = queue[i];
+            setImportProgress(prev => ({ ...prev, current: i + 1 }));
+
+            try {
+                await api.createSecret({
+                    title: item.title,
+                    username: item.username || '',
+                    password: item.password,
+                    url: item.url || '',
+                });
+                setImportProgress(prev => ({ ...prev, successCount: prev.successCount + 1 }));
+            } catch (error: any) {
+                setIsImporting(false);
+                setImportError({
+                    title: item.title,
+                    error: error.message || 'Unknown error',
+                });
+                return; // Stop on error
+            }
+        }
+
+        setIsImporting(false);
+        setImportQueue([]);
+        setImportError(null);
+        // Only invalidate once at the end
+        qc.invalidateQueries({ queryKey: ['secrets'] });
+
+        setFeedbackModal({
+            visible: true,
+            title: t('vault.importSuccess'),
+            message: skippedCount > 0
+                ? t('vault.importSuccessWithSkipped', { count: queue.length, skipped: skippedCount })
+                : t('vault.importSuccessDesc', { count: queue.length }),
+            type: 'success'
+        });
+    };
+
+    const handleImportFromGoogle = () => {
+        setShowCreateMenu(false);
+        setShowImportConfirm(true);
+    };
+
+    const onConfirmImport = async () => {
+        setShowImportConfirm(false);
+        setStopImportRequested(false);
+
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: ['text/csv', 'text/comma-separated-values', '*/*'],
+                copyToCacheDirectory: true,
+            });
+
+            if (result.canceled) return;
+
+            const fileContent = await FileSystem.readAsStringAsync(result.assets[0].uri);
+            const parsedItems = parseGoogleCSV(fileContent);
+
+            if (parsedItems.length === 0) {
+                setFeedbackModal({
+                    visible: true,
+                    title: t('common.error'),
+                    message: t('vault.noItems'),
+                    type: 'error'
+                });
+                return;
+            }
+
+            // FILTER DUPLICATES
+            const filteredItems: any[] = [];
+            let skipped = 0;
+
+            parsedItems.forEach(item => {
+                const isDup = secrets.some(existing => isSecretDuplicate(item, existing));
+                if (isDup) {
+                    skipped++;
+                } else {
+                    filteredItems.push(item);
+                }
+            });
+
+            if (filteredItems.length === 0 && skipped > 0) {
+                setFeedbackModal({
+                    visible: true,
+                    title: t('vault.importSuccess'),
+                    message: t('vault.importSuccessWithSkipped', { count: 0, skipped }),
+                    type: 'info'
+                });
+                return;
+            } else if (filteredItems.length === 0) {
+                setFeedbackModal({
+                    visible: true,
+                    title: t('common.error'),
+                    message: t('vault.noItems'),
+                    type: 'error'
+                });
+                return;
+            }
+
+            setImportQueue(filteredItems);
+            setImportProgress({ current: 0, total: filteredItems.length, successCount: 0, skipped });
+
+            // Start processing with filtered items
+            processImportQueue(filteredItems, 0, skipped);
+
+        } catch (err: any) {
+            console.error('Import init error:', err);
+            setFeedbackModal({
+                visible: true,
+                title: t('common.error'),
+                message: 'Failed to read file: ' + err.message,
+                type: 'error'
+            });
+        }
+    };
+
+    const onRetryImport = () => {
+        setImportError(null);
+        // Resume from current index (current - 1 because current was incremented at start of loop)
+        // Actually, current is 1-based index in UI "1 of 50". So index is current - 1.
+        // But if it failed at item `i`, `current` was set to `i + 1`. 
+        // So we retry item `i`, which is index `current - 1`.
+        processImportQueue(importQueue, importProgress.current - 1, importProgress.skipped);
+    };
+
+    const onStopImport = () => {
+        setImportError(null);
+        setStopImportRequested(true); // Should be redundant as we are not in loop but for safety
+        setIsImporting(false);
+        setImportQueue([]);
+        qc.invalidateQueries({ queryKey: ['secrets'] }); // Invalidate so partial imports show up
+    };
+
+    // --- End Import Logic ---
+
     const combinedItems = useMemo(() => {
         let items: Array<{ item: Secret | Note; type: ItemType; isFavorite: boolean }> = [];
 
@@ -419,8 +646,17 @@ function VaultContent() {
                                     <Ionicons name="document-text-outline" size={18} color={theme.colors.text} />
                                     <Text style={[styles.createMenuText, { color: theme.colors.text }]}>{t('vault.newNote')}</Text>
                                 </TouchableOpacity>
+                                <View style={[styles.menuDivider, { backgroundColor: theme.colors.border }]} />
+                                <TouchableOpacity
+                                    style={styles.createMenuItem}
+                                    onPress={handleImportFromGoogle}
+                                >
+                                    <Ionicons name="cloud-download-outline" size={18} color={theme.colors.text} />
+                                    <Text style={[styles.createMenuText, { color: theme.colors.text }]}>{t('vault.importFromGoogle')}</Text>
+                                </TouchableOpacity>
                             </View>
                         )}
+
                     </View>
                 </View>
             </View>
@@ -511,14 +747,108 @@ function VaultContent() {
 
             {/* Delete Modal */}
             <Modal
+                title={t('vault.deleteItem')}
                 visible={deleteModalVisible}
                 onClose={() => setDeleteModalVisible(false)}
-                title={t('vault.deleteItem')}
-                message={t('vault.deleteConfirm')}
-                confirmText={t('common.delete')}
-                onConfirm={handleDelete}
-                variant="danger"
-            />
+            >
+                <View style={styles.modalContent}>
+                    <Text style={[styles.modalText, { color: theme.colors.text }]}>
+                        {t('vault.deleteConfirm')}
+                    </Text>
+                    <View style={styles.modalButtons}>
+                        <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setDeleteModalVisible(false)}>
+                            <Text style={styles.buttonText}>{t('common.cancel')}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.modalButton, { backgroundColor: theme.colors.error }]} onPress={handleDelete}>
+                            <Text style={styles.buttonText}>{t('common.delete')}</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Import Confirm Modal */}
+            <Modal
+                title={t('vault.importConfirmTitle')}
+                visible={showImportConfirm}
+                onClose={() => setShowImportConfirm(false)}
+                confirmText={t('vault.selectFile')}
+                onConfirm={onConfirmImport}
+                cancelText={t('common.cancel')}
+            >
+                <View style={{ width: '100%', gap: 12 }}>
+                    <Text style={[styles.modalText, { color: theme.colors.text, marginBottom: 8 }]}>
+                        {t('vault.importInfo')}
+                    </Text>
+
+                    <View style={{ backgroundColor: theme.colors.surfaceElevated, padding: 12, borderRadius: 8 }}>
+                        <Text style={{ fontFamily: 'Comfortaa_700Bold', color: theme.colors.text, fontSize: 14, marginBottom: 4 }}>
+                            {t('vault.howToExport')}
+                        </Text>
+                        <Text style={{ fontFamily: 'Comfortaa_400Regular', color: theme.colors.textMuted, fontSize: 13, lineHeight: 20 }}>
+                            {t('vault.exportSteps')}
+                        </Text>
+                    </View>
+
+                    <Text style={[styles.modalText, { color: theme.colors.textMuted, fontSize: 12, fontStyle: 'italic', marginTop: 4 }]}>
+                        {t('vault.importConfirmDesc')}
+                    </Text>
+                </View>
+            </Modal>
+
+            {/* Import Failure Modal */}
+            <Modal
+                title={t('vault.importFailedTitle')}
+                visible={!!importError}
+                onClose={() => { }} // User must choose an option
+                showCancel={false}
+            >
+                <View style={styles.modalContent}>
+                    <Text style={[styles.modalText, { color: theme.colors.text }]}>
+                        {t('vault.importFailedDesc', { title: importError?.title, error: importError?.error })}
+                    </Text>
+                    <View style={styles.modalButtons}>
+                        <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={onStopImport}>
+                            <Text style={styles.buttonText}>{t('vault.importStop')}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.modalButton, { backgroundColor: theme.colors.accent }]} onPress={onRetryImport}>
+                            <Text style={styles.buttonText}>{t('vault.importRetry')}</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Feedback Modal */}
+            <Modal
+                visible={!!feedbackModal}
+                title={feedbackModal?.title || ''}
+                message={feedbackModal?.message || ''}
+                onClose={() => setFeedbackModal(null)}
+                variant={feedbackModal?.type === 'error' ? 'danger' : 'default'}
+                confirmText={t('common.ok')}
+                showCancel={false}
+            >
+                <View />
+            </Modal>
+
+            {/* Import Progress Overlay */}
+            {isImporting && (
+                <View style={[styles.overlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+                    <View style={[styles.syncContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderWidth: 1 }]}>
+                        <ActivityIndicator size="large" color={theme.colors.accent} />
+                        <Text style={[styles.syncText, { color: theme.colors.text }]}>{t('vault.importing')}</Text>
+                        <Text style={[styles.syncSubText, { color: theme.colors.textMuted }]}>
+                            {t('vault.importProgress', { current: importProgress.current, total: importProgress.total })}
+                        </Text>
+
+                        <TouchableOpacity
+                            style={{ marginTop: 15, padding: 8 }}
+                            onPress={() => setStopImportRequested(true)}
+                        >
+                            <Text style={{ color: theme.colors.error, fontFamily: 'Comfortaa_500Medium' }}>{t('vault.importStop')}</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            )}
 
             {/* Create Modal */}
             <Modal
@@ -678,12 +1008,66 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         padding: 8,
         minWidth: 150,
+        maxWidth: 220,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.15,
         shadowRadius: 8,
         elevation: 8,
         zIndex: 100,
+    },
+    overlay: {
+        ...StyleSheet.absoluteFillObject,
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 1000,
+    },
+    syncContainer: {
+        padding: 24,
+        borderRadius: 16,
+        alignItems: 'center',
+        gap: 16,
+        minWidth: 200,
+        maxWidth: '80%',
+    },
+    syncText: {
+        fontSize: 16,
+        fontFamily: 'Comfortaa_500Medium',
+        marginTop: 8,
+    },
+    syncSubText: {
+        fontSize: 14,
+        fontFamily: 'Comfortaa_400Regular',
+        textAlign: 'center',
+    },
+    modalContent: {
+        width: '100%',
+    },
+    modalText: {
+        fontSize: 15,
+        fontFamily: 'Comfortaa_400Regular',
+        lineHeight: 22,
+        marginBottom: 24,
+    },
+    modalButtons: {
+        flexDirection: 'row',
+        gap: 12,
+        justifyContent: 'flex-end',
+    },
+    modalButton: {
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        borderRadius: 8,
+        minWidth: 80,
+        alignItems: 'center',
+    },
+    cancelButton: {
+        backgroundColor: 'rgba(150, 150, 150, 0.1)',
+    },
+    buttonText: {
+        color: '#fff',
+        fontSize: 14,
+        fontFamily: 'Comfortaa_500Medium',
     },
     createMenuItem: {
         flexDirection: 'row',
@@ -694,8 +1078,15 @@ const styles = StyleSheet.create({
     createMenuText: {
         fontSize: 14,
         fontFamily: 'Comfortaa_500Medium',
+        flexShrink: 1,
     },
+    menuDivider: {
+        height: 1,
+        marginVertical: 4,
+    },
+
     filterRow: {
+
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 20,

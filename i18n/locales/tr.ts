@@ -22,6 +22,7 @@ export default {
         back: 'Geri',
         continue: 'Devam Et',
         done: 'Tamam',
+        ok: 'Tamam',
     },
     auth: {
         signIn: 'Giriş Yap',
@@ -102,7 +103,9 @@ export default {
         include: 'Dahil et:',
         newSecret: 'Yeni Sır',
         newNote: 'Yeni Not',
+        importFromGoogle: "Google Şifre Yöneticisinden İçe Aktar",
         noItems: 'Öğe bulunamadı',
+
         searchResults: '"{{query}}" için arama sonuçları ({{count}} öğe)',
         deleteItem: 'Öğeyi Sil',
 
@@ -124,6 +127,25 @@ export default {
         updated: 'Güncellenme',
         editor: 'Düzenleyici',
         preview: 'Önizleme',
+
+        // Import
+        importConfirmTitle: "Google'dan İçe Aktar?",
+        importConfirmDesc: 'Bu işlem Google Şifre Yöneticisi CSV dışa aktarımınızdaki şifreleri içe aktaracaktır.\n\n⚠️ Uyarı: Eğer kasanızda aynı sırlar zaten mevcutsa bu işlem kopya kayıtlar oluşturabilir.',
+        importInfo: 'Güvenlik nedenleriyle Google doğrudan içe aktarmayı desteklemez. Şifrelerinizi manuel olarak dışa aktarmalısınız.',
+        howToExport: 'CSV dosyasını nasıl alırım:',
+        exportSteps: '1. Google Şifre Yöneticisi\'ni açın\n2. Ayarlar > Şifreleri dışa aktar yolunu izleyin\n3. .csv dosyasını indirin',
+        importing: 'İçe Aktarılıyor...',
+        importProgress: '{{current}} / {{total}} içe aktarılıyor...',
+        importSuccess: 'İçe Aktarım Tamamlandı',
+        importSuccessDesc: '{{count}} sır başarıyla içe aktarıldı.',
+        importSuccessWithSkipped: '{{count}} sır içe aktarıldı. {{skipped}} birebir kopya atlandı.',
+        importFailedTitle: 'İçe Aktarım Başarısız',
+        importFailedDesc: 'Sır içe aktarılamadı: {{title}}.\nHata: {{error}}',
+        importRetry: 'Tekrar Dene',
+        importStop: 'İçe Aktarımı Durdur',
+        selectFile: 'CSV Dosyası Seç',
+        stopImportConfirm: 'Durdurmak istiyor musunuz?',
+        stopImportDesc: 'İçe aktarımı durdurmak istediğinize emin misiniz? Şu ana kadar {{count}} sır içe aktarıldı.',
         titleRequired: 'Başlık gereklidir',
         noteTitlePlaceholder: 'Not Başlığı...',
         noContent: 'Önizlenecek içerik yok',

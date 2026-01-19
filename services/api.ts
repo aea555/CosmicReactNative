@@ -70,11 +70,12 @@ class ApiService {
             const isInvalidToken = errorData.code === 'INVALID_TOKEN' || response.status === 401;
 
             if (isInvalidToken) {
-                const refreshSuccess = await this.attemptTokenRefresh();
+                const newToken = await this.attemptTokenRefresh();
 
-                if (refreshSuccess) {
+                if (newToken) {
                     // Retry the original request with new token
-                    headers['Authorization'] = `Bearer ${this.accessToken}`;
+                    this.setAccessToken(newToken); // Update internal state potentially
+                    headers['Authorization'] = `Bearer ${newToken}`;
                     const retryResponse = await fetch(`${API_BASE_URL}${endpoint}`, {
                         ...fetchOptions,
                         headers,
@@ -115,18 +116,18 @@ class ApiService {
         return data as unknown as T;
     }
 
-    private async attemptTokenRefresh(): Promise<boolean> {
+    private async attemptTokenRefresh(): Promise<string | null> {
         const refreshFn = (globalThis as any).__cosmicRefreshTokens;
         const setRefreshing = (globalThis as any).__cosmicSetRefreshing;
 
-        if (!refreshFn) return false;
+        if (!refreshFn) return null;
 
         try {
             setRefreshing?.(true);
-            const success = await refreshFn();
-            return success;
+            const token = await refreshFn();
+            return token;
         } catch {
-            return false;
+            return null;
         } finally {
             setRefreshing?.(false);
         }

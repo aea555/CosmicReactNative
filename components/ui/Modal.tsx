@@ -136,22 +136,24 @@ export function Modal({
 
                         {children}
 
-                        <View style={styles.buttonContainer}>
-                            {showCancel && (
+                        {(showCancel || confirmText || onConfirm) && (
+                            <View style={styles.buttonContainer}>
+                                {showCancel && (
+                                    <Button
+                                        title={effectiveCancelText}
+                                        onPress={onClose}
+                                        variant="ghost"
+                                        style={styles.button}
+                                    />
+                                )}
                                 <Button
-                                    title={effectiveCancelText}
-                                    onPress={onClose}
-                                    variant="ghost"
+                                    title={effectiveConfirmText}
+                                    onPress={onConfirm || onClose}
+                                    variant={variant === 'danger' ? 'danger' : 'primary'}
                                     style={styles.button}
                                 />
-                            )}
-                            <Button
-                                title={effectiveConfirmText}
-                                onPress={onConfirm || onClose}
-                                variant={variant === 'danger' ? 'danger' : 'primary'}
-                                style={styles.button}
-                            />
-                        </View>
+                            </View>
+                        )}
                     </Animated.View>
                 </TouchableWithoutFeedback>
             </KeyboardAvoidingView>

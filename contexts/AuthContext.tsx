@@ -27,7 +27,7 @@ interface AuthContextType {
     getAccessToken: () => string | null;
     isRefreshing: boolean;
     setIsRefreshing: (value: boolean) => void;
-    refreshTokens: () => Promise<boolean>;
+    refreshTokens: () => Promise<string | null>;
 }
 
 
@@ -182,11 +182,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
     };
 
-    const refreshTokens = useCallback(async (): Promise<boolean> => {
+    const refreshTokens = useCallback(async (): Promise<string | null> => {
         // Guard: no token or empty token
         if (!refreshToken || refreshToken.trim() === '') {
             console.warn('refreshTokens: No valid refresh token available');
-            return false;
+            return null;
         }
 
         const delays = [1000, 2000, 5000];
@@ -228,7 +228,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                         expiresIn: data.data.expires_in,
                     });
                     console.log('Token refresh successful');
-                    return true;
+                    return data.data.access_token;
                 }
 
                 // Non-retriable errors - don't attempt again
@@ -242,7 +242,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
                 if (nonRetriableErrors.includes(data.code)) {
                     console.warn(`Token refresh failed with non-retriable error: ${data.code} - ${data.error}`);
-                    return false;
+                    return null;
                 }
 
                 // For other errors, continue to retry
@@ -258,7 +258,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
 
         console.warn('Token refresh exhausted all retries');
-        return false;
+        return null;
     }, [refreshToken]);
 
 

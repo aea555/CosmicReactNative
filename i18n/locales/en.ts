@@ -21,6 +21,7 @@ export default {
         back: 'Back',
         continue: 'Continue',
         done: 'Done',
+        ok: 'OK',
     },
     auth: {
         signIn: 'Sign In',
@@ -101,7 +102,9 @@ export default {
         include: 'Include:',
         newSecret: 'New Secret',
         newNote: 'New Note',
+        importFromGoogle: 'Import from Google',
         noItems: 'No items found',
+
         searchResults: 'Search results for "{{query}}" ({{count}} items)',
         deleteItem: 'Delete Item',
 
@@ -126,6 +129,25 @@ export default {
         titleRequired: 'Title is required',
         noteTitlePlaceholder: 'Note Title...',
         noContent: 'No content to preview',
+
+        // Import
+        importConfirmTitle: 'Import from Google?',
+        importConfirmDesc: 'This will import passwords from your Google Password Manager CSV export.\n\n⚠️ Warning: This action may create duplicate entries if you already have the same secrets in your vault.',
+        importInfo: 'Direct import is not supported by Google for security reasons. You must manually export your passwords.',
+        howToExport: 'How to get your CSV:',
+        exportSteps: '1. Open Google Password Manager\n2. Go to Settings > Export Passwords\n3. Download the .csv file',
+        importing: 'Importing secrets...',
+        importProgress: 'Importing {{current}} of {{total}}...',
+        importSuccess: 'Import Complete',
+        importSuccessDesc: 'Successfully imported {{count}} secrets.',
+        importSuccessWithSkipped: 'Imported {{count}} secrets. {{skipped}} exact duplicates were skipped.',
+        importFailedTitle: 'Import Failed',
+        importFailedDesc: 'Failed to import secret: {{title}}.\nError: {{error}}',
+        importRetry: 'Retry',
+        importStop: 'Stop Import',
+        selectFile: 'Select CSV File',
+        stopImportConfirm: 'Stop Import?',
+        stopImportDesc: 'Are you sure you want to stop the import? {{count}} secrets have been imported so far.',
     },
     generators: {
         title: 'Generators',
