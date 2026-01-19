@@ -24,6 +24,7 @@ export default {
         continue: 'Devam Et',
         done: 'Tamam',
         ok: 'Tamam',
+        error: 'Hata',
         success: 'Başarılı',
     },
     auth: {
@@ -111,7 +112,7 @@ export default {
         include: 'Dahil et:',
         newSecret: 'Yeni Sır',
         newNote: 'Yeni Not',
-        importFromGoogle: "Google Şifre Yöneticisinden İçe Aktar",
+        importFromCSV: "CSV'den İçe Aktar",
         noItems: 'Öğe bulunamadı',
 
         searchResults: '"{{query}}" için arama sonuçları ({{count}} öğe)',
@@ -144,11 +145,11 @@ export default {
         preview: 'Önizleme',
 
         // Import
-        importConfirmTitle: "Google'dan İçe Aktar?",
-        importConfirmDesc: 'Bu işlem Google Şifre Yöneticisi CSV dışa aktarımınızdaki şifreleri içe aktaracaktır.\n\n⚠️ Uyarı: Eğer kasanızda aynı sırlar zaten mevcutsa bu işlem kopya kayıtlar oluşturabilir.',
-        importInfo: 'Güvenlik nedenleriyle Google doğrudan içe aktarmayı desteklemez. Şifrelerinizi manuel olarak dışa aktarmalısınız.',
-        howToExport: 'CSV dosyasını nasıl alırım:',
-        exportSteps: '1. Google Şifre Yöneticisi\'ni açın\n2. Ayarlar > Şifreleri dışa aktar yolunu izleyin\n3. .csv dosyasını indirin',
+        importConfirmTitle: "İçe Aktar (CSV)",
+        importConfirmDesc: 'Bu işlem CSV dosyanızdaki (Google, Bitwarden vb.) şifreleri içe aktaracaktır.\n\n⚠️ Uyarı: Eğer kasanızda aynı sırlar zaten mevcutsa bu işlem kopya kayıtlar oluşturabilir.',
+        importInfo: 'CSV dosyanızın şu başlıklara sahip olduğundan emin olun: "name/title", "url/login_uri", "username/login_username", "password/login_password".',
+        howToExport: 'Dışa Aktarma Talimatları:',
+        exportSteps: '1. Şifre Yöneticinizi (Google, Bitwarden vb.) açın\n2. "Şifreleri Dışa Aktar" veya "Kasayı Dışa Aktar" seçeneğini bulun\n3. CSV olarak kaydedin',
         importing: 'İçe Aktarılıyor...',
         importProgress: '{{current}} / {{total}} içe aktarılıyor...',
         importSuccess: 'İçe Aktarım Tamamlandı',

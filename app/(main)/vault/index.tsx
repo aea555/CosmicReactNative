@@ -453,9 +453,9 @@ function VaultContent() {
 
     // --- Import Logic ---
 
-    const parseGoogleCSV = (content: string) => {
-        const lines = content.split(/\r\n|\n/);
-        const headers = lines[0].toLowerCase().split(',');
+    const parseCSV = (content: string) => {
+        const lines = content.split(/\r\n|\n/); // Handle both CRLF and LF
+        const headers = lines[0].toLowerCase().split(',').map(h => h.trim());
         const result = [];
 
         for (let i = 1; i < lines.length; i++) {
@@ -489,12 +489,29 @@ function VaultContent() {
             const entry: any = {};
             headers.forEach((header, index) => {
                 const value = values[index]?.trim();
-                // Map common Google export headers
-                if (header === 'name') entry.title = value;
-                else if (header === 'url') entry.url = value;
-                else if (header === 'username') entry.username = value;
-                else if (header === 'password') entry.password = value;
-                else if (header === 'note') entry.note = value; // Notes are not currently supported in Secret entity, maybe append to title? Or ignore.
+                if (!value) return;
+
+                // Flexible Mapping
+                // Title/Name
+                if (header === 'name' || header === 'title') {
+                    entry.title = value;
+                }
+                // URL
+                else if (header === 'url' || header === 'login_uri') {
+                    entry.url = value;
+                }
+                // Username
+                else if (header === 'username' || header === 'login_username') {
+                    entry.username = value;
+                }
+                // Password
+                else if (header === 'password' || header === 'login_password') {
+                    entry.password = value;
+                }
+                // Note (Not strictly used yet but good to capture if future support)
+                else if (header === 'note' || header === 'notes') {
+                    entry.note = value;
+                }
             });
 
             if (entry.title && entry.password) {
@@ -584,7 +601,7 @@ function VaultContent() {
             if (result.canceled) return;
 
             const fileContent = await FileSystem.readAsStringAsync(result.assets[0].uri);
-            const parsedItems = parseGoogleCSV(fileContent);
+            const parsedItems = parseCSV(fileContent);
 
             if (parsedItems.length === 0) {
                 setFeedbackModal({
@@ -800,7 +817,7 @@ function VaultContent() {
                                     onPress={handleImportFromGoogle}
                                 >
                                     <Ionicons name="cloud-download-outline" size={18} color={theme.colors.text} />
-                                    <Text style={[styles.createMenuText, { color: theme.colors.text }]}>{t('vault.importFromGoogle')}</Text>
+                                    <Text style={[styles.createMenuText, { color: theme.colors.text }]}>{t('vault.importFromCSV')}</Text>
                                 </TouchableOpacity>
                             </View>
                         )}

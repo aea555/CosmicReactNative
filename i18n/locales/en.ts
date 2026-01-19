@@ -25,6 +25,7 @@ export default {
         done: 'Done',
         ok: 'OK',
         success: 'Success',
+        error: 'Error',
     },
     auth: {
         signIn: 'Sign In',
@@ -111,7 +112,7 @@ export default {
         include: 'Include:',
         newSecret: 'New Secret',
         newNote: 'New Note',
-        importFromGoogle: 'Import from Google',
+        importFromCSV: 'Import from CSV',
         noItems: 'No items found',
 
         searchResults: 'Search results for "{{query}}" ({{count}} items)',
@@ -147,11 +148,11 @@ export default {
         noContent: 'No content to preview',
 
         // Import
-        importConfirmTitle: 'Import from Google?',
-        importConfirmDesc: 'This will import passwords from your Google Password Manager CSV export.\n\n⚠️ Warning: This action may create duplicate entries if you already have the same secrets in your vault.',
-        importInfo: 'Direct import is not supported by Google for security reasons. You must manually export your passwords.',
-        howToExport: 'How to get your CSV:',
-        exportSteps: '1. Open Google Password Manager\n2. Go to Settings > Export Passwords\n3. Download the .csv file',
+        importConfirmTitle: 'Import from CSV?',
+        importConfirmDesc: 'This will import passwords from a CSV file (Google Password Manager, Bitwarden, etc.).\n\n⚠️ Warning: This action may create duplicate entries if you already have the same secrets in your vault.',
+        importInfo: 'Ensure your CSV has headers like "name/title", "url/login_uri", "username/login_username", "password/login_password".',
+        howToExport: 'Export Instructions:',
+        exportSteps: '1. Open your Password Manager (Google, Bitwarden, etc.)\n2. Find "Export Passwords" or "Export Vault"\n3. Save as CSV file',
         importing: 'Importing secrets...',
         importProgress: 'Importing {{current}} of {{total}}...',
         importSuccess: 'Import Complete',
