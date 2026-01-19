@@ -26,7 +26,11 @@ interface AuthContextType {
     clearMasterPassword: () => void;
     getAccessToken: () => string | null;
     isRefreshing: boolean;
+    setIsRefreshing: (value: boolean) => void;
+    refreshTokens: () => Promise<boolean>;
 }
+
+
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -179,35 +183,72 @@ export function AuthProvider({ children }: AuthProviderProps) {
     };
 
     const refreshTokens = useCallback(async (): Promise<boolean> => {
-        if (!refreshToken) return false;
+        // Guard: no token or empty token
+        if (!refreshToken || refreshToken.trim() === '') {
+            console.warn('refreshTokens: No valid refresh token available');
+            return false;
+        }
 
         const delays = [1000, 2000, 5000];
 
         for (let attempt = 0; attempt < delays.length + 1; attempt++) {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
+                const requestUrl = `${API_BASE_URL}/api/v1/auth/refresh`;
+                const requestBody = { refresh_token: refreshToken };
+
+                console.log('=== Token Refresh Request ===');
+                console.log('URL:', requestUrl);
+                console.log('Body:', JSON.stringify(requestBody, null, 2));
+
+                const response = await fetch(requestUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ refresh_token: refreshToken }),
+                    body: JSON.stringify(requestBody),
                 });
 
-                const data = await response.json();
+                const responseText = await response.text();
 
-                if (response.ok) {
+                console.log('=== Token Refresh Response ===');
+                console.log('Status:', response.status, response.statusText);
+                console.log('Body:', responseText);
+
+                // Try to parse as JSON
+                let data;
+                try {
+                    data = JSON.parse(responseText);
+                } catch (parseError) {
+                    console.error('Failed to parse response as JSON:', parseError);
+                    throw new Error(`Non-JSON response: ${responseText.substring(0, 200)}`);
+                }
+
+                if (response.ok && data.success) {
                     await saveTokens({
                         accessToken: data.data.access_token,
                         refreshToken: data.data.refresh_token,
                         expiresIn: data.data.expires_in,
                     });
+                    console.log('Token refresh successful');
                     return true;
                 }
 
-                // If token is expired or invalid, don't retry
-                if (data.code === 'TOKEN_REUSED' || data.code === 'TOKEN_EXPIRED') {
+                // Non-retriable errors - don't attempt again
+                const nonRetriableErrors = [
+                    'TOKEN_REUSED',
+                    'TOKEN_EXPIRED',
+                    'INVALID_TOKEN',
+                    'VALIDATION_ERROR',
+                    'INVALID_REQUEST_BODY',
+                ];
+
+                if (nonRetriableErrors.includes(data.code)) {
+                    console.warn(`Token refresh failed with non-retriable error: ${data.code} - ${data.error}`);
                     return false;
                 }
+
+                // For other errors, continue to retry
+                console.warn(`Token refresh attempt ${attempt + 1} failed: ${data.code} - ${data.error}`);
             } catch (error) {
-                console.error(`Refresh attempt ${attempt + 1} failed:`, error);
+                console.error(`Refresh attempt ${attempt + 1} failed with exception:`, error);
             }
 
             // Wait before next attempt (except on last attempt)
@@ -216,8 +257,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
             }
         }
 
+        console.warn('Token refresh exhausted all retries');
         return false;
     }, [refreshToken]);
+
 
     // Expose refresh function for API service
     useEffect(() => {
@@ -256,6 +299,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 clearMasterPassword,
                 getAccessToken,
                 isRefreshing,
+                setIsRefreshing,
+                refreshTokens,
             }}
         >
             {children}
@@ -270,7 +315,5 @@ export function useAuth() {
     }
     return context;
 }
-
-
 
 export { API_BASE_URL };

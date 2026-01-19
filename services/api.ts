@@ -58,10 +58,18 @@ class ApiService {
 
         // Handle 401 - try to refresh token
         if (response.status === 401 && requiresAuth) {
-            const data = await response.json();
+            let errorData: any = {};
+            try {
+                errorData = await response.json();
+            } catch (e) {
+                // response might be empty or text
+            }
 
-            // Attempt refresh on any 401 when auth is required
-            if (requiresAuth) {
+            // Only attempt refresh if strict code match or strict 401 behavior required
+            // We specifically look for "INVALID_TOKEN" or generic 401s if no code provided
+            const isInvalidToken = errorData.code === 'INVALID_TOKEN' || response.status === 401;
+
+            if (isInvalidToken) {
                 const refreshSuccess = await this.attemptTokenRefresh();
 
                 if (refreshSuccess) {
@@ -74,17 +82,23 @@ class ApiService {
 
                     if (!retryResponse.ok) {
                         const retryData = await retryResponse.json();
+                        // If retry fails with same error, then we really logout
+                        if (retryResponse.status === 401) {
+                            await this.handleRefreshFailure();
+                            throw new ApiRequestError('Session expired', 'SESSION_EXPIRED');
+                        }
                         throw new ApiRequestError(retryData.error || 'Request failed', retryData.code);
                     }
 
                     return retryResponse.json().then(d => d.data || d);
                 } else {
-                    // Refresh failed - logout user
+                    // Refresh failed - logout user silently (app will redirect)
                     await this.handleRefreshFailure();
+                    // We throw a specific error that UI can ignore or show as "Logged out"
                     throw new ApiRequestError('Session expired. Please log in again.', 'SESSION_EXPIRED');
                 }
             } else {
-                throw new ApiRequestError(data.error || 'Authentication failed', data.code);
+                throw new ApiRequestError(errorData.error || 'Authentication failed', errorData.code);
             }
         }
 

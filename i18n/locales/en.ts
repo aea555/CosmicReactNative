@@ -2,6 +2,7 @@
 export default {
     common: {
         loading: 'Loading...',
+        refreshingSession: 'Refreshing session...',
         cancel: 'Cancel',
         confirm: 'Confirm',
         save: 'Save',
@@ -96,11 +97,14 @@ export default {
         note: 'Note',
         secrets: 'Secrets',
         notes: 'Notes',
+        favorites: 'Favorites',
         include: 'Include:',
         newSecret: 'New Secret',
         newNote: 'New Note',
         noItems: 'No items found',
+        searchResults: 'Search results for "{{query}}" ({{count}} items)',
         deleteItem: 'Delete Item',
+
         deleteConfirm: 'Are you sure you want to delete this item? This action cannot be undone.',
         itemNotFound: 'Item not found',
         editSecret: 'Edit Secret',
@@ -128,7 +132,7 @@ export default {
         tabs: {
             password: 'Password',
             passphrase: 'Phrase',
-            secret: 'Secret',
+            secret: 'Key',
             ssh: 'SSH Key',
         },
         options: {

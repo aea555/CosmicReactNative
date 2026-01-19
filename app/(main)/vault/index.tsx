@@ -5,6 +5,7 @@ import { SecretItem } from '@/components/vault/SecretItem';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { api, Note, Secret } from '@/services/api';
+import { useFavoritesStore } from '@/stores/favorites';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
@@ -35,7 +36,13 @@ function VaultContent() {
     const [searchQuery, setSearchQuery] = useState('');
     const [showSecrets, setShowSecrets] = useState(true);
     const [showNotes, setShowNotes] = useState(true);
+    const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
     const [showCreateMenu, setShowCreateMenu] = useState(false);
+
+    // Get favorites store
+    const favoriteSecretIds = useFavoritesStore((state) => state.favoriteSecretIds);
+    const favoriteNoteIds = useFavoritesStore((state) => state.favoriteNoteIds);
+
 
     // Modal states
     const [deleteModalVisible, setDeleteModalVisible] = useState(false);
@@ -56,8 +63,6 @@ function VaultContent() {
         content: '',
     });
 
-    // Favorites refresh key - increment to force re-render
-    const [favoriteKey, setFavoriteKey] = useState(0);
 
     // Set up API with tokens
     useEffect(() => {
@@ -297,30 +302,51 @@ function VaultContent() {
         setShowCreateMenu(false);
     };
 
-    const handleFavoriteToggle = () => {
-        // Force re-render when favorite changes
-        setFavoriteKey((k) => k + 1);
-    };
-
     const combinedItems = useMemo(() => {
-        const items: Array<{ item: Secret | Note; type: ItemType }> = [];
+        let items: Array<{ item: Secret | Note; type: ItemType; isFavorite: boolean }> = [];
+
         if (showSecrets) {
-            filteredSecrets.forEach((s) => items.push({ item: s, type: 'secret' }));
+            filteredSecrets.forEach((s) => {
+                const isFav = favoriteSecretIds.has(s.id);
+                // If showFavoritesOnly is on, only include favorites
+                if (!showFavoritesOnly || isFav) {
+                    items.push({ item: s, type: 'secret', isFavorite: isFav });
+                }
+            });
         }
         if (showNotes) {
-            filteredNotes.forEach((n) => items.push({ item: n, type: 'note' }));
+            filteredNotes.forEach((n) => {
+                const isFav = favoriteNoteIds.has(n.id);
+                // If showFavoritesOnly is on, only include favorites
+                if (!showFavoritesOnly || isFav) {
+                    items.push({ item: n, type: 'note', isFavorite: isFav });
+                }
+            });
         }
+
+        // Sort: favorites first (newest), then non-favorites (newest)
+        items.sort((a, b) => {
+            // First by favorite status
+            if (a.isFavorite !== b.isFavorite) {
+                return a.isFavorite ? -1 : 1;
+            }
+            // Then by date (newest first)
+            const dateA = new Date(a.item.created_at || 0).getTime();
+            const dateB = new Date(b.item.created_at || 0).getTime();
+            return dateB - dateA;
+        });
+
         return items;
-        // Include favoriteKey to force re-render on favorite changes
-    }, [filteredSecrets, filteredNotes, showSecrets, showNotes, favoriteKey]);
+    }, [filteredSecrets, filteredNotes, showSecrets, showNotes, showFavoritesOnly, favoriteSecretIds, favoriteNoteIds]);
 
     const handleEditNote = (note: Note) => {
         router.push(`/(main)/vault/editor?id=${note.id}`);
     };
 
     const renderItem = useCallback(
-        ({ item }: { item: { item: Secret | Note; type: ItemType } }) => {
+        ({ item }: { item: { item: Secret | Note; type: ItemType; isFavorite: boolean } }) => {
             if (item.type === 'secret') {
+
                 return (
                     <SecretItem
                         secret={item.item as Secret}
@@ -331,7 +357,6 @@ function VaultContent() {
                             setDeleteTarget({ type: 'secret', id: item.item.id });
                             setDeleteModalVisible(true);
                         }}
-                        onFavoriteToggle={handleFavoriteToggle}
                     />
                 );
             }
@@ -345,7 +370,6 @@ function VaultContent() {
                         setDeleteTarget({ type: 'note', id: item.item.id });
                         setDeleteModalVisible(true);
                     }}
-                    onFavoriteToggle={handleFavoriteToggle}
                 />
             );
         },
@@ -403,7 +427,7 @@ function VaultContent() {
 
             {/* Filter buttons */}
             <View style={styles.filterRow}>
-                <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>{t('vault.include')}</Text>
+                {/* <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>{t('vault.include')}</Text> */}
                 <TouchableOpacity
                     style={[
                         styles.filterButton,
@@ -434,10 +458,35 @@ function VaultContent() {
                         {t('vault.notes')}
                     </Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                    style={[
+                        styles.filterButton,
+                        {
+                            backgroundColor: showFavoritesOnly ? theme.colors.warning : theme.colors.surface,
+                            borderColor: showFavoritesOnly ? theme.colors.warning : theme.colors.border,
+                        },
+                    ]}
+                    onPress={() => setShowFavoritesOnly(!showFavoritesOnly)}
+                >
+                    <Ionicons name={showFavoritesOnly ? "star" : "star-outline"} size={16} color={showFavoritesOnly ? '#fff' : theme.colors.textMuted} />
+                    <Text style={[styles.filterButtonText, { color: showFavoritesOnly ? '#fff' : theme.colors.textMuted }]}>
+                        {t('vault.favorites')}
+                    </Text>
+                </TouchableOpacity>
             </View>
+
+            {/* Search Results Indicator */}
+            {searchQuery.trim() !== '' && (
+                <View style={styles.searchIndicator}>
+                    <Text style={[styles.searchIndicatorText, { color: theme.colors.textMuted }]}>
+                        {t('vault.searchResults', { query: searchQuery, count: combinedItems.length })}
+                    </Text>
+                </View>
+            )}
 
             {/* List */}
             <FlatList
+
                 data={combinedItems}
                 keyExtractor={(item, index) => `${item.type}-${item.item.id}-${index}`}
                 renderItem={renderItem}
@@ -688,5 +737,14 @@ const styles = StyleSheet.create({
     formScroll: {
         maxHeight: 350,
         marginBottom: 16,
+    },
+    searchIndicator: {
+        paddingHorizontal: 20,
+        paddingVertical: 8,
+    },
+    searchIndicatorText: {
+        fontSize: 13,
+        fontFamily: 'Comfortaa_500Medium',
+        fontStyle: 'italic',
     },
 });

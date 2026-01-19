@@ -5,7 +5,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { api, Note, Secret } from '@/services/api';
 import { useFavoritesStore } from '@/stores/favorites';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
@@ -22,14 +22,20 @@ import Markdown from 'react-native-markdown-display';
 export default function VaultDetailPage() {
     const { t } = useTranslation();
     const { theme } = useTheme();
+    const queryClient = useQueryClient();
     const router = useRouter();
     const { id, type } = useLocalSearchParams<{ id: string; type: 'secret' | 'note' }>();
 
     const [deleteModalVisible, setDeleteModalVisible] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
 
-    const { isSecretFavorited, isNoteFavorited, toggleSecretFavorite, toggleNoteFavorite } =
-        useFavoritesStore();
+    const toggleSecretFavorite = useFavoritesStore((state) => state.toggleSecretFavorite);
+    const toggleNoteFavorite = useFavoritesStore((state) => state.toggleNoteFavorite);
+    const isFavorited = useFavoritesStore((state) =>
+        type === 'secret'
+            ? state.favoriteSecretIds.has(id || '')
+            : state.favoriteNoteIds.has(id || '')
+    );
 
     // Combined query to fetch either secret or note
     const { data: item, isLoading, error } = useQuery({
@@ -41,16 +47,15 @@ export default function VaultDetailPage() {
         enabled: !!id,
     });
 
-    const isFavorited =
-        type === 'secret' ? isSecretFavorited(id || '') : isNoteFavorited(id || '');
-
     const handleDelete = async () => {
         if (!id) return;
         try {
             if (type === 'secret') {
                 await api.deleteSecret(id);
+                queryClient.invalidateQueries({ queryKey: ['secrets'] });
             } else {
                 await api.deleteNote(id);
+                queryClient.invalidateQueries({ queryKey: ['notes'] });
             }
             router.back();
         } catch (error) {
@@ -65,6 +70,9 @@ export default function VaultDetailPage() {
         } else {
             toggleNoteFavorite(id);
         }
+        // Force re-render/update
+        queryClient.invalidateQueries({ queryKey: [type, id] });
+        queryClient.invalidateQueries({ queryKey: [type === 'secret' ? 'secrets' : 'notes'] });
     };
 
     const copyToClipboard = async (text: string) => {
@@ -147,7 +155,7 @@ export default function VaultDetailPage() {
         <>
             <View style={styles.noteHeader}>
                 <Ionicons name="document-text" size={32} color={theme.colors.accent} />
-                <Text style={[styles.title, { color: theme.colors.text }]}>{note.title}</Text>
+                <Text style={[styles.title, { color: theme.colors.text }]} selectable>{note.title}</Text>
                 {isFavorited && (
                     <Text style={[styles.favoriteLabel, { color: theme.colors.warning }]}>
                         ⭐ {t('common.favorited')}
@@ -155,8 +163,23 @@ export default function VaultDetailPage() {
                 )}
             </View>
 
+            {/* Timestamps under title */}
+            <View style={styles.noteTimestamps}>
+                <Text style={[styles.timestamp, { color: theme.colors.textMuted }]}>
+                    {t('common.created')} {new Date(note.created_at).toLocaleDateString()}
+                </Text>
+                <Text style={[styles.timestamp, { color: theme.colors.textMuted }]}>
+                    {t('common.updated')} {new Date(note.updated_at).toLocaleDateString()}
+                </Text>
+            </View>
+
             {note.content && (
-                <View style={[styles.contentBox, { backgroundColor: theme.colors.surface }]}>
+                <ScrollView
+                    style={[styles.noteContentScroll, { backgroundColor: theme.colors.surface }]}
+                    contentContainerStyle={{ paddingBottom: 20 }}
+                    showsVerticalScrollIndicator={true}
+                    nestedScrollEnabled={true}
+                >
                     <Markdown
                         style={{
                             body: { color: theme.colors.text, fontFamily: 'Comfortaa_400Regular' },
@@ -164,23 +187,42 @@ export default function VaultDetailPage() {
                             heading2: { color: theme.colors.accent, fontFamily: 'Comfortaa_700Bold' },
                             code_inline: { backgroundColor: theme.colors.surfaceElevated, color: theme.colors.text },
                             code_block: { backgroundColor: theme.colors.surfaceElevated, color: theme.colors.text },
+                            blockquote: {
+                                backgroundColor: theme.colors.surface,
+                                borderLeftColor: theme.colors.accent,
+                                borderLeftWidth: 4,
+                                paddingHorizontal: 10,
+                                paddingVertical: 5,
+                                color: theme.colors.textMuted,
+                            },
+                        }}
+                        rules={{
+                            textgroup: (node, children) => (
+                                <Text key={node.key} selectable>
+                                    {children}
+                                </Text>
+                            ),
+                        }}
+                        onLinkPress={(url) => {
+                            // Validate URL before opening
+                            if (!url || url === 'url' || !url.startsWith('http')) {
+                                console.warn('Invalid URL:', url);
+                                return false; // Prevent default action
+                            }
+                            return true; // Allow default action for valid URLs
                         }}
                     >
                         {note.content}
                     </Markdown>
-                </View>
+
+                </ScrollView>
             )}
 
-            <View style={{ marginTop: 20 }}>
-                <Button
-                    title={t('common.edit')}
-                    onPress={() => router.push(`/(main)/vault/editor?id=${note.id}`)}
-                    variant="primary"
-                    icon={<Ionicons name="create-outline" size={18} color="#fff" />}
-                />
-            </View>
         </>
     );
+
+
+
 
     if (isLoading) {
         return (
@@ -211,27 +253,38 @@ export default function VaultDetailPage() {
                 <View style={{ width: 44 }} />
             </View>
 
+            {/* Main Content */}
             <ScrollView
                 style={styles.content}
-                contentContainerStyle={styles.contentContainer}
+                contentContainerStyle={[styles.contentContainer, { paddingBottom: 40 }]}
                 showsVerticalScrollIndicator={false}
             >
                 {type === 'secret'
                     ? renderSecretDetail(item as Secret)
                     : renderNoteDetail(item as Note)}
 
-                {/* Timestamps */}
-                <View style={styles.timestamps}>
-                    <Text style={[styles.timestamp, { color: theme.colors.textMuted }]}>
-                        {t('common.created')} {new Date(item.created_at).toLocaleDateString()}
-                    </Text>
-                    <Text style={[styles.timestamp, { color: theme.colors.textMuted }]}>
-                        {t('common.updated')} {new Date(item.updated_at).toLocaleDateString()}
-                    </Text>
-                </View>
+                {/* Timestamps for secrets only (notes have it in renderNoteDetail) */}
+                {type === 'secret' && (
+                    <View style={styles.timestamps}>
+                        <Text style={[styles.timestamp, { color: theme.colors.textMuted }]}>
+                            {t('common.created')} {new Date(item.created_at).toLocaleDateString()}
+                        </Text>
+                        <Text style={[styles.timestamp, { color: theme.colors.textMuted }]}>
+                            {t('common.updated')} {new Date(item.updated_at).toLocaleDateString()}
+                        </Text>
+                    </View>
+                )}
 
-                {/* Actions */}
-                <View style={styles.actions}>
+                {/* Actions - Stacked vertically */}
+                <View style={styles.actionsVertical}>
+                    {type === 'note' && (
+                        <Button
+                            title={t('common.edit')}
+                            onPress={() => router.push(`/(main)/vault/editor?id=${(item as Note).id}`)}
+                            variant="primary"
+                            icon={<Ionicons name="create-outline" size={18} color="#fff" />}
+                        />
+                    )}
                     <Button
                         title={isFavorited ? t('common.unfavorite') : t('common.favorite')}
                         onPress={handleToggleFavorite}
@@ -256,6 +309,7 @@ export default function VaultDetailPage() {
                 onConfirm={handleDelete}
                 variant="danger"
             />
+
         </View>
     );
 }
@@ -380,6 +434,12 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         marginBottom: 20,
     },
+    noteContentScroll: {
+        maxHeight: 600,
+        padding: 20,
+        borderRadius: 16,
+        marginBottom: 20,
+    },
     contentText: {
         fontSize: 15,
         fontFamily: 'Comfortaa_400Regular',
@@ -400,6 +460,23 @@ const styles = StyleSheet.create({
     actions: {
         flexDirection: 'row',
         gap: 12,
+    },
+    actionsVertical: {
+        flexDirection: 'column',
+        gap: 12,
+        marginTop: 20,
+    },
+    noteTimestamps: {
+        flexDirection: 'column',
+        gap: 8,
+        marginBottom: 16,
+    },
+    actionBar: {
+        flexDirection: 'row',
+        padding: 16,
+        paddingBottom: 30,
+        gap: 12,
+        borderTopWidth: 1,
     },
 });
 

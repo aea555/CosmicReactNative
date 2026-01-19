@@ -9,7 +9,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 export default function SettingsPage() {
     const { t } = useTranslation();
     const { theme, setThemeMode, setSubTheme, availableSubThemes } = useTheme();
-    const { logout } = useAuth();
+    const { logout, refreshTokens, setIsRefreshing } = useAuth();
 
     const getSubThemeColor = (subTheme: string): string => {
         const colors: Record<string, string> = {
@@ -185,6 +185,28 @@ export default function SettingsPage() {
                     </View>
                 </View>
 
+                {/* Debug */}
+                {/* Do not remove this section */}
+                {/* <View style={styles.section}>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Debug</Text>
+                    <Button
+                        title="Refresh Token"
+                        onPress={async () => {
+                            setIsRefreshing(true);
+                            try {
+                                const success = await refreshTokens();
+                                console.log('Token refresh result:', success);
+                            } finally {
+                                setIsRefreshing(false);
+                            }
+                        }}
+                        variant="outline"
+                        fullWidth
+                        icon={<Ionicons name="refresh-outline" size={18} color={theme.colors.accent} />}
+                    />
+                </View> */}
+
+
                 {/* Footer */}
                 <View style={styles.footer}>
                     <Text style={[styles.footerText, { color: theme.colors.textMuted }]}>
@@ -195,6 +217,7 @@ export default function SettingsPage() {
         </View>
     );
 }
+
 
 const styles = StyleSheet.create({
     container: {

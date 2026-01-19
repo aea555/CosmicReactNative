@@ -2,6 +2,8 @@
 export default {
     common: {
         loading: 'Yükleniyor...',
+        refreshingSession: 'Oturum yenileniyor...',
+
         cancel: 'İptal',
         confirm: 'Onayla',
         save: 'Kaydet',
@@ -96,11 +98,14 @@ export default {
         note: 'Not',
         secrets: 'Sırlar',
         notes: 'Notlar',
+        favorites: 'Favoriler',
         include: 'Dahil et:',
         newSecret: 'Yeni Sır',
         newNote: 'Yeni Not',
         noItems: 'Öğe bulunamadı',
+        searchResults: '"{{query}}" için arama sonuçları ({{count}} öğe)',
         deleteItem: 'Öğeyi Sil',
+
         deleteConfirm: 'Bu öğeyi silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.',
         itemNotFound: 'Öğe bulunamadı',
         editSecret: 'Sırrı Düzenle',
@@ -128,7 +133,7 @@ export default {
         tabs: {
             password: 'Şifre',
             passphrase: 'Parola',
-            secret: 'Sır',
+            secret: 'Anahtar',
             ssh: 'SSH Anahtarı',
         },
         options: {
