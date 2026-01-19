@@ -280,38 +280,38 @@ class CosmicAutofillService : AutofillService() {
 
     private fun loadVaultData(): List<JSONObject> {
         // The filesDir should be the same for the main app and this service
-        val keyFile = File(filesDir, "vault.key")
-        val contentFile = File(filesDir, REF_FILE_NAME)
+        val file = File(filesDir, REF_FILE_NAME) // Renamed contentFile to file for consistency with new snippet
 
-        Log.d("CosmicAutofill", "Looking for vault at: ${contentFile.absolutePath}")
+        Log.d("CosmicAutofill", "Looking for vault at: ${file.absolutePath}")
         Log.d("CosmicAutofill", "Files in filesDir: ${filesDir.listFiles()?.map { it.name }}")
 
-        if (!keyFile.exists()) {
-            Log.w("CosmicAutofill", "Key file not found: ${keyFile.absolutePath}")
-            return emptyList()
-        }
-        
-        if (!contentFile.exists()) {
-            Log.w("CosmicAutofill", "Content file not found: ${contentFile.absolutePath}")
-            return emptyList()
+        val secrets = mutableListOf<JSONObject>()
+        if (!file.exists()) {
+             Log.w("CosmicAutofill", "Content file not found: ${file.absolutePath}")
+             return secrets
         }
 
-        return try {
-            // 1. Read Key (Hex string)
-            val keyHex = keyFile.readText()
-            Log.d("CosmicAutofill", "Key file length: ${keyHex.length}")
-            val keyBytes = hexStringToByteArray(keyHex)
-            val secretKey = javax.crypto.spec.SecretKeySpec(keyBytes, "AES")
+        try {
+            // 1. Check for Session Key (Memory Only)
+            val keyHex = VaultSession.sessionKey
+            if (keyHex == null) {
+                Log.d("CosmicAutofill", "No session key in memory. Autofill locked.")
+                return secrets // Empty list
+            }
 
             // 2. Read Encrypted Content
-            val encryptedJson = contentFile.readText()
+            val encryptedJson = file.readText()
             Log.d("CosmicAutofill", "Content file size: ${encryptedJson.length}")
+            
             val payload = JSONObject(encryptedJson)
             val ivHex = payload.getString("iv")
             val encryptedBase64 = payload.getString("data")
 
             val ivBytes = hexStringToByteArray(ivHex)
             val encryptedBytes = android.util.Base64.decode(encryptedBase64, android.util.Base64.DEFAULT)
+            
+            val keyBytes = hexStringToByteArray(keyHex)
+            val secretKey = javax.crypto.spec.SecretKeySpec(keyBytes, "AES")
 
             // 3. Decrypt
             val cipher = javax.crypto.Cipher.getInstance("AES/CBC/PKCS5Padding")
@@ -324,16 +324,13 @@ class CosmicAutofillService : AutofillService() {
 
             // 4. Parse JSON Array
             val jsonArray = JSONArray(decryptedString)
-            val list = mutableListOf<JSONObject>()
             for (i in 0 until jsonArray.length()) {
-                list.add(jsonArray.getJSONObject(i))
+                secrets.add(jsonArray.getJSONObject(i))
             }
-            Log.d("CosmicAutofill", "Parsed ${list.size} secrets")
-            list
         } catch (e: Exception) {
-            Log.e("CosmicAutofill", "Error Decrypting/Reading vault", e)
-            emptyList()
+            Log.e("CosmicAutofill", "Error loading vault data", e)
         }
+        return secrets
     }
 
     private fun hexStringToByteArray(s: String): ByteArray {
