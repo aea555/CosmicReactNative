@@ -10,7 +10,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { StyleSheet, View } from 'react-native';
+import { LogBox, StyleSheet, View } from 'react-native';
 
 import 'react-native-reanimated';
 import '../global.css';
@@ -24,6 +24,11 @@ import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
 
 // Prevent auto-hide of splash screen
 SplashScreen.preventAutoHideAsync();
+
+// Suppress deprecated warnings from dependencies
+LogBox.ignoreLogs([
+  "SafeAreaView has been deprecated",
+]);
 
 function NavigationGuard({ children }: { children: React.ReactNode }) {
   const { authState, isLoading } = useAuth();

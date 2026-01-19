@@ -18,10 +18,13 @@ export default {
         created: 'Created:',
         updated: 'Updated:',
         clone: 'Clone',
+        enable: 'Enable',
+        enabled: 'Enabled',
         back: 'Back',
         continue: 'Continue',
         done: 'Done',
         ok: 'OK',
+        success: 'Success',
     },
     auth: {
         signIn: 'Sign In',
@@ -112,9 +115,16 @@ export default {
         noItems: 'No items found',
 
         searchResults: 'Search results for "{{query}}" ({{count}} items)',
-        deleteItem: 'Delete Item',
+        deleteNoteConfirmTitle: 'Delete Note?',
+        deleteNoteConfirmMessage: 'Are you sure you want to delete this note? This cannot be undone.',
 
-        deleteConfirm: 'Are you sure you want to delete this item? This action cannot be undone.',
+        // Bulk Delete
+        bulkDeleteConfirmTitle: 'Delete Items',
+        bulkDeleteConfirmMessage: 'Are you sure you want to delete {{count}} items? This cannot be undone.',
+        bulkDeleteSuccess: 'Successfully deleted {{count}} items.',
+        bulkDeletePartialError: 'Deleted {{success}} items. Failed to delete {{fail}} items.',
+        selectionMode: 'Selection Mode',
+        selectedCount: '{{count}} Selected',
         itemNotFound: 'Item not found',
         editSecret: 'Edit Secret',
         editNote: 'Edit Note',
@@ -196,6 +206,10 @@ export default {
     },
     settings: {
         title: 'Settings',
+        autofill: 'Autofill Service',
+        enableAutofill: 'Enable Android Autofill',
+        autofillEnabled: 'Active',
+        autofillDisabled: 'Tap to enable',
         theme: 'Theme',
         colorScheme: 'Color Scheme',
         preview: 'Preview',

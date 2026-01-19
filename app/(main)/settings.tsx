@@ -1,15 +1,33 @@
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { checkAutofillEnabled, requestAutofillSettings } from '@/services/autofillSync';
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
+import * as Application from 'expo-application';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function SettingsPage() {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
     const { theme, setThemeMode, setSubTheme, availableSubThemes } = useTheme();
-    const { logout, refreshTokens, setIsRefreshing } = useAuth();
+    const { logout, refreshTokens, setIsRefreshing, clearMasterPassword } = useAuth();
+    const [isAutofillEnabled, setIsAutofillEnabled] = useState(false);
+
+    useEffect(() => {
+        checkAutofillStatus();
+        const interval = setInterval(checkAutofillStatus, 2000); // Check every 2s in case user returns from settings
+        return () => clearInterval(interval);
+    }, []);
+
+    const checkAutofillStatus = async () => {
+        const enabled = await checkAutofillEnabled();
+        setIsAutofillEnabled(enabled);
+    };
+
+    const handleEnableAutofill = () => {
+        requestAutofillSettings();
+    };
 
     const getSubThemeColor = (subTheme: string): string => {
         const colors: Record<string, string> = {
@@ -38,6 +56,45 @@ export default function SettingsPage() {
                 contentContainerStyle={styles.contentContainer}
                 showsVerticalScrollIndicator={false}
             >
+                {/* Autofill Service - NEW */}
+                <View style={styles.section}>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('settings.autofill', 'Autofill Service')}</Text>
+
+                    <View style={[styles.autofillCard, { backgroundColor: theme.colors.surface }]}>
+                        <View style={styles.autofillLeft}>
+                            <View style={[styles.autofillIcon, { backgroundColor: theme.colors.accent + '20' }]}>
+                                <Ionicons name="flash-outline" size={20} color={theme.colors.accent} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.autofillTitle, { color: theme.colors.text }]}>
+                                    {t('settings.enableAutofill', 'Android Autofill')}
+                                </Text>
+                                <Text style={[styles.autofillSubtitle, { color: isAutofillEnabled ? theme.colors.success : theme.colors.textMuted }]}>
+                                    {isAutofillEnabled
+                                        ? t('settings.autofillEnabled', 'Active')
+                                        : t('settings.autofillDisabled', 'Tap to enable')}
+                                </Text>
+                            </View>
+                        </View>
+                        <Pressable
+                            onPress={handleEnableAutofill}
+                            style={({ pressed }) => [
+                                styles.autofillButton,
+                                {
+                                    opacity: pressed ? 0.7 : 1,
+                                    backgroundColor: isAutofillEnabled ? theme.colors.success + '20' : theme.colors.accent,
+                                }
+                            ]}
+                        >
+                            <Text style={[styles.buttonText, {
+                                color: isAutofillEnabled ? theme.colors.success : '#fff',
+                            }]}>
+                                {isAutofillEnabled ? t('common.enabled', 'Enabled') : t('common.enable', 'Enable')}
+                            </Text>
+                        </Pressable>
+                    </View>
+                </View>
+
                 {/* Theme Mode */}
                 <View style={styles.section}>
                     <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('settings.theme')}</Text>
@@ -172,14 +229,16 @@ export default function SettingsPage() {
                     <View style={[styles.aboutCard, { backgroundColor: theme.colors.surface }]}>
                         <View style={styles.aboutRow}>
                             <Text style={[styles.aboutLabel, { color: theme.colors.textMuted }]}>{t('settings.version')}</Text>
-                            <Text style={[styles.aboutValue, { color: theme.colors.text }]}>1.0.0</Text>
+                            <Text style={[styles.aboutValue, { color: theme.colors.text }]}>
+                                {Application.nativeApplicationVersion || '1.0.0'}
+                            </Text>
                         </View>
                         <View style={styles.aboutRow}>
                             <Text style={[styles.aboutLabel, { color: theme.colors.textMuted }]}>
                                 {t('settings.build')}
                             </Text>
                             <Text style={[styles.aboutValue, { color: theme.colors.text }]}>
-                                2026.01.18
+                                {Application.nativeBuildVersion || '1'}
                             </Text>
                         </View>
                     </View>
@@ -320,6 +379,45 @@ const styles = StyleSheet.create({
     aboutValue: {
         fontSize: 14,
         fontFamily: 'Comfortaa_500Medium',
+    },
+    // Autofill Styles
+    autofillCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 16,
+        borderRadius: 14,
+    },
+    autofillLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        gap: 12,
+    },
+    autofillIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    autofillTitle: {
+        fontSize: 16,
+        fontFamily: 'Comfortaa_600SemiBold',
+    },
+    autofillSubtitle: {
+        fontSize: 13,
+        fontFamily: 'Comfortaa_400Regular',
+    },
+    autofillButton: {
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+    },
+    buttonText: {
+        fontWeight: '600',
+        fontSize: 14,
+        fontFamily: 'Comfortaa_600SemiBold',
     },
     footer: {
         alignItems: 'center',

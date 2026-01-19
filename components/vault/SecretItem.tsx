@@ -25,9 +25,25 @@ interface SecretItemProps {
     onClone: () => void;
     onDelete: () => void;
     onFavoriteToggle?: () => void;
+    // Selection Props
+    selectionMode?: boolean;
+    isSelected?: boolean;
+    onSelect?: () => void;
+    onLongPress?: () => void;
 }
 
-export function SecretItem({ secret, onPress, onEdit, onClone, onDelete, onFavoriteToggle }: SecretItemProps) {
+export function SecretItem({
+    secret,
+    onPress,
+    onEdit,
+    onClone,
+    onDelete,
+    onFavoriteToggle,
+    selectionMode = false,
+    isSelected = false,
+    onSelect,
+    onLongPress
+}: SecretItemProps) {
     const { t } = useTranslation();
     const { theme } = useTheme();
     const isFavorited = useFavoritesStore((state) => state.favoriteSecretIds.has(secret.id));
@@ -54,6 +70,7 @@ export function SecretItem({ secret, onPress, onEdit, onClone, onDelete, onFavor
     };
 
     const handleShowMenu = () => {
+        if (selectionMode) return; // Disable menu in selection mode
         menuButtonRef.current?.measureInWindow((x, y, width, height) => {
             setMenuPosition({
                 top: y + height + 4,
@@ -63,107 +80,121 @@ export function SecretItem({ secret, onPress, onEdit, onClone, onDelete, onFavor
         });
     };
 
+    const handlePress = () => {
+        if (selectionMode) {
+            onSelect?.();
+        } else {
+            onPress();
+        }
+    };
+
     return (
         <>
             <TouchableOpacity
                 style={[styles.container, { backgroundColor: theme.colors.surface }]}
-                onPress={onPress}
+                onPress={handlePress}
+                onLongPress={onLongPress}
+                delayLongPress={300}
                 activeOpacity={0.7}
             >
-                <View style={styles.indicatorContainer}>
-                    {isFavorited ? (
-                        <Ionicons name="star" size={20} color={domainColor} />
-                    ) : (
-                        <View style={[styles.colorDot, { backgroundColor: domainColor }]} />
+                {/* Selection Checkbox */}
+                {selectionMode && (
+                    <View style={styles.selectionContainer}>
+                        <Ionicons
+                            name={isSelected ? "checkbox" : "square-outline"}
+                            size={24}
+                            color={isSelected ? theme.colors.accent : theme.colors.textMuted}
+                        />
+                    </View>
+                )}
+
+                <View style={[styles.iconContainer, { backgroundColor: domainColor + '15' }]}>
+                    <Text style={[styles.domainInitial, { color: domainColor }]}>
+                        {secret.title.charAt(0).toUpperCase()}
+                    </Text>
+                    {isFavorited && (
+                        <View style={[styles.favoriteBadge, { borderColor: theme.colors.surface }]}>
+                            <Ionicons name="star" size={10} color="#fff" />
+                        </View>
                     )}
                 </View>
 
                 <View style={styles.content}>
                     <Text style={[styles.title, { color: theme.colors.text }]} numberOfLines={1}>
-                        {secret.title || secret.url || 'Untitled'}
+                        {secret.title}
                     </Text>
-                    {secondaryText && (
-                        <Text style={[styles.subtitle, { color: theme.colors.textMuted }]} numberOfLines={1}>
+                    {secondaryText ? (
+                        <Text style={[styles.secondaryText, { color: theme.colors.textMuted }]} numberOfLines={1}>
                             {secondaryText}
                         </Text>
-                    )}
+                    ) : null}
                 </View>
 
-                <View style={styles.actions}>
-                    <TouchableOpacity
-                        style={styles.actionButton}
-                        onPress={handleCopyPassword}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                        <Ionicons name="copy-outline" size={18} color={theme.colors.textMuted} />
-                    </TouchableOpacity>
+                {/* Hide actions in selection mode */}
+                {!selectionMode && (
+                    <View style={styles.actions}>
+                        {/* Copy Password Button (if password exists) */}
+                        {secret.password && (
+                            <TouchableOpacity
+                                style={[styles.actionButton, { backgroundColor: theme.colors.bg }]}
+                                onPress={handleCopyPassword}
+                            >
+                                <Ionicons name="copy-outline" size={16} color={theme.colors.textMuted} />
+                            </TouchableOpacity>
+                        )}
 
-                    <View ref={menuButtonRef} collapsable={false}>
-                        <TouchableOpacity
-                            style={styles.actionButton}
-                            onPress={handleShowMenu}
-                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        >
-                            <Ionicons name="ellipsis-vertical" size={18} color={theme.colors.textMuted} />
-                        </TouchableOpacity>
+                        {/* Menu Button */}
+                        <View ref={menuButtonRef} collapsable={false}>
+                            <TouchableOpacity
+                                style={[styles.actionButton, { backgroundColor: theme.colors.bg }]}
+                                onPress={handleShowMenu}
+                            >
+                                <Ionicons name="ellipsis-vertical" size={16} color={theme.colors.textMuted} />
+                            </TouchableOpacity>
+                        </View>
                     </View>
-                </View>
+                )}
             </TouchableOpacity>
 
-            {/* Dropdown Menu Modal */}
             <Modal
-                visible={showMenu}
                 transparent
-                animationType="fade"
+                visible={showMenu}
                 onRequestClose={() => setShowMenu(false)}
+                animationType="fade"
             >
                 <TouchableWithoutFeedback onPress={() => setShowMenu(false)}>
                     <View style={styles.modalOverlay}>
                         <View
                             style={[
-                                styles.menu,
+                                styles.menuContainer,
                                 {
-                                    backgroundColor: theme.colors.surfaceElevated,
                                     top: menuPosition.top,
                                     right: menuPosition.right,
-                                },
+                                    backgroundColor: theme.colors.surface,
+                                    shadowColor: "#000",
+                                }
                             ]}
                         >
-                            <TouchableOpacity
-                                style={styles.menuItem}
-                                onPress={() => { onEdit(); setShowMenu(false); }}
-                            >
-                                <Ionicons name="pencil-outline" size={16} color={theme.colors.text} />
-                                <Text style={[styles.menuText, { color: theme.colors.text }]}>{t('common.edit')}</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={styles.menuItem}
-                                onPress={() => { onClone(); setShowMenu(false); }}
-                            >
-                                <Ionicons name="copy-outline" size={16} color={theme.colors.text} />
-                                <Text style={[styles.menuText, { color: theme.colors.text }]}>{t('common.clone')}</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={styles.menuItem}
-                                onPress={handleFavorite}
-                            >
+                            <TouchableOpacity style={styles.menuItem} onPress={handleFavorite}>
                                 <Ionicons
-                                    name={isFavorited ? 'star' : 'star-outline'}
-                                    size={16}
-                                    color={isFavorited ? theme.colors.warning : theme.colors.text}
+                                    name={isFavorited ? "star" : "star-outline"}
+                                    size={18}
+                                    color={isFavorited ? "#fbbf24" : theme.colors.text}
                                 />
                                 <Text style={[styles.menuText, { color: theme.colors.text }]}>
                                     {isFavorited ? t('common.unfavorite') : t('common.favorite')}
                                 </Text>
                             </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={styles.menuItem}
-                                onPress={() => { onDelete(); setShowMenu(false); }}
-                            >
-                                <Ionicons name="trash-outline" size={16} color={theme.colors.error} />
+                            <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); onEdit(); }}>
+                                <Ionicons name="create-outline" size={18} color={theme.colors.text} />
+                                <Text style={[styles.menuText, { color: theme.colors.text }]}>{t('common.edit')}</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); onClone(); }}>
+                                <Ionicons name="duplicate-outline" size={18} color={theme.colors.text} />
+                                <Text style={[styles.menuText, { color: theme.colors.text }]}>{t('common.clone')}</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={[styles.menuItem, styles.deleteItem]} onPress={() => { setShowMenu(false); onDelete(); }}>
+                                <Ionicons name="trash-outline" size={18} color={theme.colors.error} />
                                 <Text style={[styles.menuText, { color: theme.colors.error }]}>{t('common.delete')}</Text>
                             </TouchableOpacity>
                         </View>
@@ -178,68 +209,88 @@ const styles = StyleSheet.create({
     container: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 16,
-        borderRadius: 14,
-        marginBottom: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
+        padding: 12,
+        borderRadius: 12,
+        marginBottom: 8,
     },
-    indicatorContainer: {
-        width: 28,
+    selectionContainer: {
+        marginRight: 12,
+    },
+    iconContainer: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
         alignItems: 'center',
-        marginRight: 14,
+        justifyContent: 'center',
+        marginRight: 12,
     },
-    colorDot: {
-        width: 12,
-        height: 12,
-        borderRadius: 6,
+    domainInitial: {
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    favoriteBadge: {
+        position: 'absolute',
+        bottom: -2,
+        right: -2,
+        backgroundColor: '#fbbf24',
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 2,
     },
     content: {
         flex: 1,
-        marginRight: 12,
+        marginRight: 8,
     },
     title: {
-        fontSize: 15,
-        fontFamily: 'Comfortaa_500Medium',
-        marginBottom: 3,
+        fontSize: 16,
+        fontWeight: '600',
+        marginBottom: 2,
     },
-    subtitle: {
+    secondaryText: {
         fontSize: 13,
-        fontFamily: 'Comfortaa_400Regular',
     },
     actions: {
         flexDirection: 'row',
-        alignItems: 'center',
         gap: 8,
     },
     actionButton: {
-        padding: 6,
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     modalOverlay: {
         flex: 1,
+        backgroundColor: 'transparent',
     },
-    menu: {
+    menuContainer: {
         position: 'absolute',
+        width: 180,
         borderRadius: 12,
         padding: 8,
-        minWidth: 150,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
+        elevation: 5,
+        shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.25,
-        shadowRadius: 12,
-        elevation: 10,
+        shadowRadius: 3.84,
     },
     menuItem: {
         flexDirection: 'row',
         alignItems: 'center',
         padding: 12,
-        gap: 10,
+        gap: 12,
+        borderRadius: 8,
+    },
+    deleteItem: {
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(0,0,0,0.05)',
+        marginTop: 4,
     },
     menuText: {
         fontSize: 14,
-        fontFamily: 'Comfortaa_500Medium',
-    },
+        fontWeight: '500',
+    }
 });

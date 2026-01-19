@@ -82,6 +82,13 @@ function VaultContent() {
     const [createModalVisible, setCreateModalVisible] = useState(false);
     const [createType, setCreateType] = useState<ItemType>('secret');
 
+    // Selection State
+    const [selectionMode, setSelectionMode] = useState(false);
+    const [selectedSecrets, setSelectedSecrets] = useState<Set<string>>(new Set());
+    const [selectedNotes, setSelectedNotes] = useState<Set<string>>(new Set());
+    const [bulkDeleteConfirmVisible, setBulkDeleteConfirmVisible] = useState(false);
+    const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
     // Form states
     const [formData, setFormData] = useState({
         title: '',
@@ -232,6 +239,119 @@ function VaultContent() {
     }, [notes, searchQuery]);
 
     // CRUD handlers
+
+    // --- Bulk Selection Handlers ---
+
+    const toggleSelectionMode = (initialItem?: { type: ItemType; id: string }) => {
+        setSelectionMode(true);
+        if (initialItem) {
+            if (initialItem.type === 'secret') {
+                setSelectedSecrets(new Set([initialItem.id]));
+                setSelectedNotes(new Set());
+            } else {
+                setSelectedNotes(new Set([initialItem.id]));
+                setSelectedSecrets(new Set());
+            }
+        }
+    };
+
+    const toggleItemSelection = (type: ItemType, id: string) => {
+        if (type === 'secret') {
+            setSelectedSecrets(prev => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+            });
+        } else {
+            setSelectedNotes(prev => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+            });
+        }
+    };
+
+    const cancelSelection = () => {
+        setSelectionMode(false);
+        setSelectedSecrets(new Set());
+        setSelectedNotes(new Set());
+    };
+
+    const selectAll = () => {
+        // Apply current filters
+        const visibleSecrets = showSecrets ? filteredSecrets : [];
+        const visibleNotes = showNotes ? filteredNotes : [];
+
+        if (showFavoritesOnly) {
+            setSelectedSecrets(new Set(visibleSecrets.filter(s => favoriteSecretIds.has(s.id)).map(s => s.id)));
+            setSelectedNotes(new Set(visibleNotes.filter(n => favoriteNoteIds.has(n.id)).map(n => n.id)));
+        } else {
+            setSelectedSecrets(new Set(visibleSecrets.map(s => s.id)));
+            setSelectedNotes(new Set(visibleNotes.map(n => n.id)));
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        setBulkDeleteConfirmVisible(false);
+        setIsBulkDeleting(true);
+
+        const secretIds = Array.from(selectedSecrets);
+        const noteIds = Array.from(selectedNotes);
+
+        const total = secretIds.length + noteIds.length;
+        let successCount = 0;
+        let failCount = 0;
+
+        try {
+            const secretPromises = secretIds.map(id => api.deleteSecret(id));
+            const notePromises = noteIds.map(id => api.deleteNote(id));
+
+            const results = await Promise.allSettled([...secretPromises, ...notePromises]);
+
+            results.forEach(result => {
+                if (result.status === 'fulfilled') {
+                    successCount++;
+                } else {
+                    failCount++;
+                }
+            });
+
+            // Invalidate queries ONCE
+            qc.invalidateQueries({ queryKey: ['secrets'] });
+            qc.invalidateQueries({ queryKey: ['notes'] });
+
+            // Show result feedback
+            if (failCount === 0) {
+                setFeedbackModal({
+                    visible: true,
+                    title: t('common.success'),
+                    message: t('vault.bulkDeleteSuccess', { count: successCount }),
+                    type: 'success'
+                });
+            } else {
+                setFeedbackModal({
+                    visible: true,
+                    title: t('common.warning'),
+                    message: t('vault.bulkDeletePartialError', { success: successCount, fail: failCount }),
+                    type: 'info'
+                });
+            }
+
+        } catch (error) {
+            setFeedbackModal({
+                visible: true,
+                title: t('common.error'),
+                message: 'Unexpected error during bulk deletion.',
+                type: 'error'
+            });
+        } finally {
+            setIsBulkDeleting(false);
+            cancelSelection();
+        }
+    };
+
     const handleDelete = () => {
         if (!deleteTarget) return;
         if (deleteTarget.type === 'secret') {
@@ -586,6 +706,10 @@ function VaultContent() {
 
     const renderItem = useCallback(
         ({ item }: { item: { item: Secret | Note; type: ItemType; isFavorite: boolean } }) => {
+            const isSelected = item.type === 'secret'
+                ? selectedSecrets.has(item.item.id)
+                : selectedNotes.has(item.item.id);
+
             if (item.type === 'secret') {
 
                 return (
@@ -598,6 +722,11 @@ function VaultContent() {
                             setDeleteTarget({ type: 'secret', id: item.item.id });
                             setDeleteModalVisible(true);
                         }}
+                        // Selection Props
+                        selectionMode={selectionMode}
+                        isSelected={isSelected}
+                        onSelect={() => toggleItemSelection('secret', item.item.id)}
+                        onLongPress={() => !selectionMode && toggleSelectionMode({ type: 'secret', id: item.item.id })}
                     />
                 );
             }
@@ -611,10 +740,15 @@ function VaultContent() {
                         setDeleteTarget({ type: 'note', id: item.item.id });
                         setDeleteModalVisible(true);
                     }}
+                    // Selection Props
+                    selectionMode={selectionMode}
+                    isSelected={isSelected}
+                    onSelect={() => toggleItemSelection('note', item.item.id)}
+                    onLongPress={() => !selectionMode && toggleSelectionMode({ type: 'note', id: item.item.id })}
                 />
             );
         },
-        [router, cloneSecretMutation, cloneNoteMutation]
+        [router, cloneSecretMutation, cloneNoteMutation, selectionMode, selectedSecrets, selectedNotes]
     );
 
     return (
@@ -726,7 +860,7 @@ function VaultContent() {
             </View>
 
             {/* Search Results Indicator */}
-            {searchQuery.trim() !== '' && (
+            {searchQuery.trim() !== '' && !selectionMode && (
                 <View style={styles.searchIndicator}>
                     <Text style={[styles.searchIndicatorText, { color: theme.colors.textMuted }]}>
                         {t('vault.searchResults', { query: searchQuery, count: combinedItems.length })}
@@ -736,7 +870,6 @@ function VaultContent() {
 
             {/* List */}
             <FlatList
-
                 data={combinedItems}
                 keyExtractor={(item, index) => `${item.type}-${item.item.id}-${index}`}
                 renderItem={renderItem}
@@ -759,6 +892,36 @@ function VaultContent() {
                 }
             />
 
+            {/* Selection Bar */}
+            {selectionMode && (
+                <View style={[styles.selectionBar, { backgroundColor: theme.colors.surfaceElevated, borderTopColor: theme.colors.border }]}>
+                    <View style={styles.selectionLeft}>
+                        <TouchableOpacity style={styles.closeSelectionButton} onPress={cancelSelection}>
+                            <Ionicons name="close" size={24} color={theme.colors.text} />
+                        </TouchableOpacity>
+                        <Text style={[styles.selectionCount, { color: theme.colors.text }]}>
+                            {t('vault.selectedCount', { count: selectedSecrets.size + selectedNotes.size })}
+                        </Text>
+                    </View>
+
+                    <View style={styles.selectionActions}>
+                        <TouchableOpacity style={styles.selectionActionButton} onPress={selectAll}>
+                            <Ionicons name="checkmark-done-outline" size={22} color={theme.colors.text} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.selectionActionButton, { backgroundColor: theme.colors.error + '20' }]}
+                            onPress={() => {
+                                if (selectedSecrets.size + selectedNotes.size > 0) {
+                                    setBulkDeleteConfirmVisible(true);
+                                }
+                            }}
+                        >
+                            <Ionicons name="trash-outline" size={22} color={theme.colors.error} />
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            )}
+
             {/* Delete Modal */}
             <Modal
                 title={t('vault.deleteItem')}
@@ -770,6 +933,20 @@ function VaultContent() {
                 cancelText={t('common.cancel')}
                 showCancel={true}
                 variant="danger"
+            />
+
+            {/* Bulk Delete Confirm Modal */}
+            <Modal
+                title={t('vault.bulkDeleteConfirmTitle')}
+                visible={bulkDeleteConfirmVisible}
+                onClose={() => setBulkDeleteConfirmVisible(false)}
+                message={t('vault.bulkDeleteConfirmMessage', { count: selectedSecrets.size + selectedNotes.size })}
+                confirmText={t('common.delete')}
+                onConfirm={handleBulkDelete}
+                cancelText={t('common.cancel')}
+                showCancel={true}
+                variant="danger"
+                loading={isBulkDeleting}
             />
 
             {/* Import Confirm Modal */}
@@ -1022,6 +1199,117 @@ const styles = StyleSheet.create({
         elevation: 8,
         zIndex: 100,
     },
+    createMenuItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+        gap: 12,
+    },
+    createMenuText: {
+        fontSize: 14,
+        fontFamily: 'Comfortaa_500Medium',
+        flexShrink: 1,
+    },
+    menuDivider: {
+        height: 1,
+        marginHorizontal: 8,
+        marginVertical: 4,
+    },
+    filterRow: {
+        flexDirection: 'row',
+        paddingHorizontal: 20,
+        gap: 10,
+        paddingBottom: 12,
+        alignItems: 'center',
+    },
+    filterLabel: {
+        fontSize: 13,
+        fontFamily: 'Comfortaa_500Medium',
+        marginRight: 4,
+    },
+    filterButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 20,
+        borderWidth: 1,
+    },
+    filterButtonText: {
+        fontSize: 13,
+        fontFamily: 'Comfortaa_500Medium',
+    },
+    list: {
+        paddingHorizontal: 20,
+        paddingBottom: 100,
+    },
+    searchIndicator: {
+        paddingHorizontal: 20,
+        marginBottom: 8,
+    },
+    searchIndicatorText: {
+        fontSize: 13,
+        fontFamily: 'Comfortaa_500Medium',
+        fontStyle: 'italic',
+    },
+    emptyState: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingTop: 60,
+    },
+    emptyText: {
+        marginTop: 12,
+        fontSize: 16,
+        fontFamily: 'Comfortaa_400Regular',
+    },
+    modalText: {
+        fontSize: 14,
+        fontFamily: 'Comfortaa_400Regular',
+    },
+    // Selection Bar
+    selectionBar: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: 70,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderTopWidth: 1,
+        elevation: 10,
+        shadowRadius: 4,
+        paddingBottom: 10, // Adjust for safe area if needed
+        zIndex: 100,
+    },
+    selectionLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    closeSelectionButton: {
+        padding: 4,
+    },
+    selectionCount: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        fontFamily: 'Comfortaa_700Bold',
+    },
+    selectionActions: {
+        flexDirection: 'row',
+        gap: 16,
+    },
+    selectionActionButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    // Overlay and other misc styles
     overlay: {
         ...StyleSheet.absoluteFillObject,
         justifyContent: 'center',
@@ -1046,14 +1334,13 @@ const styles = StyleSheet.create({
         fontFamily: 'Comfortaa_400Regular',
         textAlign: 'center',
     },
+    formScroll: {
+        maxHeight: 350,
+        marginBottom: 16,
+    },
+    // Modal specific styles (some might be unused if we switch to generic Modal)
     modalContent: {
         width: '100%',
-    },
-    modalText: {
-        fontSize: 15,
-        fontFamily: 'Comfortaa_400Regular',
-        lineHeight: 22,
-        marginBottom: 24,
     },
     modalButtons: {
         flexDirection: 'row',
@@ -1074,74 +1361,5 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 14,
         fontFamily: 'Comfortaa_500Medium',
-    },
-    createMenuItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 12,
-        gap: 10,
-    },
-    createMenuText: {
-        fontSize: 14,
-        fontFamily: 'Comfortaa_500Medium',
-        flexShrink: 1,
-    },
-    menuDivider: {
-        height: 1,
-        marginVertical: 4,
-    },
-
-    filterRow: {
-
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingBottom: 16,
-        gap: 10,
-    },
-    filterLabel: {
-        fontSize: 13,
-        fontFamily: 'Comfortaa_500Medium',
-        marginRight: 4,
-    },
-    filterButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 14,
-        paddingVertical: 8,
-        borderRadius: 10,
-        borderWidth: 1,
-        gap: 6,
-    },
-    filterButtonText: {
-        fontSize: 13,
-        fontFamily: 'Comfortaa_500Medium',
-    },
-    list: {
-        paddingHorizontal: 20,
-        paddingBottom: 120,
-    },
-    emptyState: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingTop: 80,
-        gap: 12,
-    },
-    emptyText: {
-        fontSize: 15,
-        fontFamily: 'Comfortaa_500Medium',
-    },
-    formScroll: {
-        maxHeight: 350,
-        marginBottom: 16,
-    },
-    searchIndicator: {
-        paddingHorizontal: 20,
-        paddingVertical: 8,
-    },
-    searchIndicatorText: {
-        fontSize: 13,
-        fontFamily: 'Comfortaa_500Medium',
-        fontStyle: 'italic',
     },
 });

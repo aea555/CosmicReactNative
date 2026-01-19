@@ -32,6 +32,7 @@ interface ModalProps {
     variant?: 'default' | 'danger';
     children?: React.ReactNode;
     showCancel?: boolean;
+    loading?: boolean;
 }
 
 export function Modal({
@@ -45,6 +46,7 @@ export function Modal({
     variant = 'default',
     children,
     showCancel = true,
+    loading = false,
 }: ModalProps) {
     const { t } = useTranslation();
     const { theme } = useTheme();

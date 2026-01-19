@@ -86,6 +86,19 @@ export const syncVaultToAutofill = async (secrets: Secret[]) => {
     }
 };
 
+export const checkAutofillEnabled = async (): Promise<boolean> => {
+    if (CosmicAutofillModule && CosmicAutofillModule.hasEnabledAutofillServices) {
+        return await CosmicAutofillModule.hasEnabledAutofillServices();
+    }
+    return false;
+};
+
+export const requestAutofillSettings = () => {
+    if (CosmicAutofillModule && CosmicAutofillModule.requestSetAutofillService) {
+        CosmicAutofillModule.requestSetAutofillService();
+    }
+};
+
 export interface PendingSave {
     packageName: string;
     username: string;
