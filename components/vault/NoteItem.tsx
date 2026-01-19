@@ -212,11 +212,12 @@ const styles = StyleSheet.create({
     },
     title: {
         fontSize: 16,
-        fontWeight: '600',
+        fontFamily: 'Comfortaa_700Bold',
         marginBottom: 2,
     },
     secondaryText: {
         fontSize: 13,
+        fontFamily: 'Comfortaa_500Medium',
     },
     actions: {
         flexDirection: 'row',
@@ -257,6 +258,6 @@ const styles = StyleSheet.create({
     },
     menuText: {
         fontSize: 14,
-        fontWeight: '500',
-    },
+        fontFamily: 'Comfortaa_500Medium',
+    }
 });

@@ -114,6 +114,8 @@ export default {
         newNote: 'New Note',
         importFromCSV: 'Import from CSV',
         noItems: 'No items found',
+        deleteItem: 'Delete Item',
+        deleteConfirm: 'Are you sure you want to delete this item? This cannot be undone.',
 
         searchResults: 'Search results for "{{query}}" ({{count}} items)',
         deleteNoteConfirmTitle: 'Delete Note?',

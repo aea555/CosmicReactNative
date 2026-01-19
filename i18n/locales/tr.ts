@@ -114,6 +114,8 @@ export default {
         newNote: 'Yeni Not',
         importFromCSV: "CSV'den İçe Aktar",
         noItems: 'Öğe bulunamadı',
+        deleteItem: 'Öğe Silinecek',
+        deleteConfirm: 'Emin misiniz?',
 
         searchResults: '"{{query}}" için arama sonuçları ({{count}} öğe)',
         deleteNoteConfirmTitle: 'Notu Sil?',
