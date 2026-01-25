@@ -65,6 +65,68 @@ export default function NoteEditorPage() {
     const [wholeWord, setWholeWord] = useState(false);
     const [selection, setSelection] = useState({ start: 0, end: 0 });
 
+    // History (Undo/Redo)
+    const [canUndo, setCanUndo] = useState(false);
+    const [canRedo, setCanRedo] = useState(false);
+    const pastRef = useRef<string[]>([]);
+    const futureRef = useRef<string[]>([]);
+    const isApplyingHistoryRef = useRef(false);
+    const lastHistoryContentRef = useRef('');
+    const historyTimeoutRef = useRef<any>(null);
+
+    const saveToHistory = (newContent: string, instant = false) => {
+        if (newContent === lastHistoryContentRef.current) return;
+
+        const performSave = () => {
+            pastRef.current = [...pastRef.current, lastHistoryContentRef.current];
+            futureRef.current = [];
+            lastHistoryContentRef.current = newContent;
+            setCanUndo(true);
+            setCanRedo(false);
+        };
+
+        if (historyTimeoutRef.current) {
+            clearTimeout(historyTimeoutRef.current);
+            historyTimeoutRef.current = null;
+        }
+
+        if (instant) {
+            performSave();
+        } else {
+            historyTimeoutRef.current = setTimeout(performSave, 2000); // Match auto-save debounce
+        }
+    };
+
+    const handleUndo = () => {
+        if (pastRef.current.length === 0) return;
+
+        const prev = pastRef.current[pastRef.current.length - 1];
+        pastRef.current = pastRef.current.slice(0, -1);
+        futureRef.current = [content, ...futureRef.current];
+
+        isApplyingHistoryRef.current = true;
+        setContent(prev);
+        lastHistoryContentRef.current = prev;
+        setCanUndo(pastRef.current.length > 0);
+        setCanRedo(true);
+        setTimeout(() => (isApplyingHistoryRef.current = false), 50);
+    };
+
+    const handleRedo = () => {
+        if (futureRef.current.length === 0) return;
+
+        const next = futureRef.current[0];
+        futureRef.current = futureRef.current.slice(1);
+        pastRef.current = [...pastRef.current, content];
+
+        isApplyingHistoryRef.current = true;
+        setContent(next);
+        lastHistoryContentRef.current = next;
+        setCanUndo(true);
+        setCanRedo(futureRef.current.length > 0);
+        setTimeout(() => (isApplyingHistoryRef.current = false), 50);
+    };
+
     useEffect(() => {
         if (initialId) {
             loadNote();
@@ -87,10 +149,8 @@ export default function NoteEditorPage() {
                 setIsCreated(true);
                 setLastSavedTitle(title);
                 setLastSavedContent(content);
-                console.log('[Editor] Auto-create note success, invalidating notes...');
                 await queryClient.invalidateQueries({ queryKey: ['notes'] });
                 await queryClient.refetchQueries({ queryKey: ['notes'] }); // Also force refetch for background updates
-                console.log('[Editor] Notes invalidated');
             } catch (error: any) {
                 console.error('Auto-create failed:', error);
             } finally {
@@ -135,9 +195,20 @@ export default function NoteEditorPage() {
             setIsLoading(true);
             const data = await api.getNote(initialId!);
             setTitle(data.title);
+
+            isApplyingHistoryRef.current = true;
             setContent(data.content || '');
+            lastHistoryContentRef.current = data.content || '';
             setLastSavedContent(data.content || '');
             setLastSavedTitle(data.title);
+
+            // Reset stacks for the loaded note
+            pastRef.current = [];
+            futureRef.current = [];
+            setCanUndo(false);
+            setCanRedo(false);
+
+            setTimeout(() => (isApplyingHistoryRef.current = false), 100);
         } catch (error) {
             showError(t('errors.error'), t('errors.noteNotFound'));
             router.back();
@@ -187,6 +258,17 @@ export default function NoteEditorPage() {
         }
     };
 
+    useEffect(() => {
+        if (isApplyingHistoryRef.current) return;
+        saveToHistory(content);
+    }, [content]);
+
+    useEffect(() => {
+        return () => {
+            if (historyTimeoutRef.current) clearTimeout(historyTimeoutRef.current);
+        };
+    }, []);
+
     const handleSelectionChange = (event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
         const newSelection = event.nativeEvent.selection;
         selectionRef.current = newSelection;
@@ -194,6 +276,7 @@ export default function NoteEditorPage() {
     };
 
     const insertMarkdown = (syntax: string) => {
+        saveToHistory(content, true);
         setContent(prev => prev + syntax);
     };
 
@@ -243,10 +326,12 @@ export default function NoteEditorPage() {
         const isMatch = regex.test(currentSelText);
 
         if (isMatch) {
+            saveToHistory(content, true);
             const before = content.substring(0, selectionRef.current.start);
             const after = content.substring(selectionRef.current.end);
             const newContent = before + replaceQuery + after;
             setContent(newContent);
+            lastHistoryContentRef.current = newContent;
 
             // Move cursor after replacement
             const newCursorPos = selectionRef.current.start + replaceQuery.length;
@@ -267,7 +352,9 @@ export default function NoteEditorPage() {
 
         const newContent = content.replace(regex, replaceQuery);
         if (newContent !== content) {
+            saveToHistory(content, true);
             setContent(newContent);
+            lastHistoryContentRef.current = newContent;
         }
     };
 
@@ -503,25 +590,41 @@ export default function NoteEditorPage() {
                             />
                         </TouchableOpacity>
 
-                        <Pressable onPressIn={() => insertMarkdown(t('markdown.headingPlaceholder'))} style={styles.toolbarAction}>
+                        <TouchableOpacity
+                            onPress={handleUndo}
+                            disabled={!canUndo}
+                            style={[styles.toolbarAction, !canUndo && { opacity: 0.3 }]}
+                        >
+                            <Ionicons name="arrow-undo-outline" size={22} color={theme.colors.text} />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            onPress={handleRedo}
+                            disabled={!canRedo}
+                            style={[styles.toolbarAction, !canRedo && { opacity: 0.3 }]}
+                        >
+                            <Ionicons name="arrow-redo-outline" size={22} color={theme.colors.text} />
+                        </TouchableOpacity>
+
+                        <Pressable onPress={() => insertMarkdown(t('markdown.headingPlaceholder'))} style={styles.toolbarAction}>
                             <Text style={[styles.toolbarTextIcon, { color: theme.colors.text, fontWeight: 'bold' }]}>H1</Text>
                         </Pressable>
-                        <Pressable onPressIn={() => insertMarkdown(t('markdown.boldPlaceholder'))} style={styles.toolbarAction}>
+                        <Pressable onPress={() => insertMarkdown(t('markdown.boldPlaceholder'))} style={styles.toolbarAction}>
                             <Text style={[styles.toolbarTextIcon, { color: theme.colors.text, fontWeight: '900', fontFamily: 'serif' }]}>B</Text>
                         </Pressable>
-                        <Pressable onPressIn={() => insertMarkdown(t('markdown.italicPlaceholder'))} style={styles.toolbarAction}>
+                        <Pressable onPress={() => insertMarkdown(t('markdown.italicPlaceholder'))} style={styles.toolbarAction}>
                             <Text style={[styles.toolbarTextIcon, { color: theme.colors.text, fontStyle: 'italic', fontWeight: 'bold', fontFamily: 'serif' }]}>I</Text>
                         </Pressable>
-                        <Pressable onPressIn={() => insertMarkdown(t('markdown.listPlaceholder'))} style={styles.toolbarAction}>
+                        <Pressable onPress={() => insertMarkdown(t('markdown.listPlaceholder'))} style={styles.toolbarAction}>
                             <Ionicons name="list" size={22} color={theme.colors.text} />
                         </Pressable>
-                        <Pressable onPressIn={() => insertMarkdown(t('markdown.quotePlaceholder'))} style={styles.toolbarAction}>
+                        <Pressable onPress={() => insertMarkdown(t('markdown.quotePlaceholder'))} style={styles.toolbarAction}>
                             <Ionicons name="chatbox-ellipses-outline" size={22} color={theme.colors.text} />
                         </Pressable>
-                        <Pressable onPressIn={() => insertMarkdown(t('markdown.codePlaceholder'))} style={styles.toolbarAction}>
+                        <Pressable onPress={() => insertMarkdown(t('markdown.codePlaceholder'))} style={styles.toolbarAction}>
                             <Ionicons name="code-slash" size={22} color={theme.colors.text} />
                         </Pressable>
-                        <Pressable onPressIn={() => insertMarkdown(t('markdown.linkPlaceholder'))} style={styles.toolbarAction}>
+                        <Pressable onPress={() => insertMarkdown(t('markdown.linkPlaceholder'))} style={styles.toolbarAction}>
                             <Ionicons name="link" size={22} color={theme.colors.text} />
                         </Pressable>
                     </ScrollView>
