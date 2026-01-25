@@ -162,7 +162,13 @@ export default {
         noContent: 'No content to preview',
         findPlaceholder: 'Find...',
         replacePlaceholder: 'Replace...',
-
+        matchCase: 'Match Case',
+        wholeWord: 'Whole Word',
+        findNext: 'Find Next',
+        replace: 'Replace',
+        replaceAll: 'Replace All',
+        swap: 'Swap',
+        importCSV: 'Import CSV',
         // Import
         importConfirmTitle: 'Import from CSV?',
         importConfirmDesc: 'This will import passwords from a CSV file (Google Password Manager, Bitwarden, etc.).\n\n⚠️ Warning: This action may create duplicate entries if you already have the same secrets in your vault.',
@@ -183,7 +189,6 @@ export default {
         selectFile: 'Select CSV File',
         stopImportConfirm: 'Stop Import?',
         stopImportDesc: 'Are you sure you want to stop the import? {{count}} secrets have been imported so far.',
-        importCSV: 'Import CSV',
         empty: "Vault Empty"
     },
     generators: {

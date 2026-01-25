@@ -52,17 +52,8 @@ function VaultContent() {
         refetch: refetchSecrets,
     } = useQuery({
         queryKey: ['secrets'],
-        queryFn: async () => {
-            console.log('[Vault] Fetching secrets...');
-            const data = await api.getSecrets();
-            console.log('[Vault] Secrets fetched:', data.length);
-            return data;
-        },
+        queryFn: () => api.getSecrets(),
     });
-
-    useEffect(() => {
-        console.log('[Vault] Secrets state updated:', secrets.length);
-    }, [secrets]);
 
     // Autofill - Auto Process Pending Saves (No UI)
     useAutoProcessPendingSaves(secrets);
@@ -132,27 +123,16 @@ function VaultContent() {
         refetch: refetchNotes,
     } = useQuery({
         queryKey: ['notes'],
-        queryFn: async () => {
-            console.log('[Vault] Fetching notes...');
-            const data = await api.getNotes();
-            console.log('[Vault] Notes fetched:', data.length);
-            return data;
-        },
+        queryFn: () => api.getNotes(),
     });
-
-    useEffect(() => {
-        console.log('[Vault] Notes state updated:', notes.length);
-    }, [notes]);
 
     const isLoading = secretsLoading || notesLoading;
 
     // Mutations
     const createSecretMutation = useMutation({
         mutationFn: (data: Parameters<typeof api.createSecret>[0]) => api.createSecret(data),
-        onSuccess: async (newSecret) => {
-            console.log('[Mutation] Create secret success, invalidating secrets...', newSecret.id);
+        onSuccess: async () => {
             await qc.invalidateQueries({ queryKey: ['secrets'] });
-            console.log('[Mutation] Secrets invalidated');
             resetForm();
             setCreateModalVisible(false);
         },
@@ -195,10 +175,8 @@ function VaultContent() {
 
     const createNoteMutation = useMutation({
         mutationFn: (data: Parameters<typeof api.createNote>[0]) => api.createNote(data),
-        onSuccess: async (newNote) => {
-            console.log('[Mutation] Create note success, invalidating notes...', newNote.id);
+        onSuccess: async () => {
             await qc.invalidateQueries({ queryKey: ['notes'] });
-            console.log('[Mutation] Notes invalidated');
             resetForm();
             setCreateModalVisible(false);
         },
@@ -850,7 +828,6 @@ function VaultContent() {
             return dateB - dateA;
         });
 
-        console.log('[Vault] Recalculating combinedItems:', items.length);
         return items;
     }, [filteredSecrets, filteredNotes, showSecrets, showNotes, showFavoritesOnly, searchQuery]);
 

@@ -3,7 +3,7 @@ export default {
     common: {
         loading: 'Yükleniyor...',
         refreshingSession: 'Oturum yenileniyor...',
-
+        created: 'Oluşturulma:',
         cancel: 'İptal',
         confirm: 'Onayla',
         save: 'Kaydet',
@@ -183,6 +183,12 @@ export default {
         noContent: 'Önizlenecek içerik yok',
         findPlaceholder: 'Bul...',
         replacePlaceholder: 'Değiştir...',
+        matchCase: 'Harf Duyarlı',
+        wholeWord: 'Tam Kelime',
+        findNext: 'Sonrakini Bul',
+        replace: 'Değiştir',
+        replaceAll: 'Tümünü Değiştir',
+        swap: 'Yer Değiştir',
         importCSV: "CSV'yi içeri aktar",
         empty: "Kasa Boş"
     },

@@ -61,6 +61,9 @@ export default function NoteEditorPage() {
     const [replaceQuery, setReplaceQuery] = useState('');
     const [searchMatchCount, setSearchMatchCount] = useState(0);
     const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
+    const [matchCase, setMatchCase] = useState(false);
+    const [wholeWord, setWholeWord] = useState(false);
+    const [selection, setSelection] = useState({ start: 0, end: 0 });
 
     useEffect(() => {
         if (initialId) {
@@ -114,10 +117,8 @@ export default function NoteEditorPage() {
                 await api.updateNote(noteId, { title, content });
                 setLastSavedContent(content);
                 setLastSavedTitle(title);
-                console.log('[Editor] Auto-save note success, invalidating notes...');
                 await queryClient.invalidateQueries({ queryKey: ['note', noteId] });
                 await queryClient.invalidateQueries({ queryKey: ['notes'] });
-                console.log('[Editor] Notes invalidated');
             } catch (error: any) {
                 console.error('Auto-save failed:', error);
             } finally {
@@ -172,12 +173,10 @@ export default function NoteEditorPage() {
                 setLastSavedContent(content);
             }
 
-            console.log('[Editor] Manual save note success, invalidating notes...');
             await queryClient.invalidateQueries({ queryKey: ['notes'] });
             if (noteId) {
                 await queryClient.invalidateQueries({ queryKey: ['note', noteId] });
             }
-            console.log('[Editor] Notes invalidated, navigating back');
 
             if (!silent) router.back();
         } catch (error: any) {
@@ -191,65 +190,93 @@ export default function NoteEditorPage() {
     const handleSelectionChange = (event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
         const newSelection = event.nativeEvent.selection;
         selectionRef.current = newSelection;
-        // Verify if we need to update state (e.g. for search navigation)
-        // setSelection(newSelection); // Causing re-renders?
+        setSelection(newSelection);
     };
 
     const insertMarkdown = (syntax: string) => {
         setContent(prev => prev + syntax);
     };
 
-    // Search Logic
+    // Search Logic helpers
+    const getSearchRegex = (query: string, global = false) => {
+        if (!query) return null;
+        const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const pattern = wholeWord ? `\\b${escapedQuery}\\b` : escapedQuery;
+        return new RegExp(pattern, (matchCase ? '' : 'i') + (global ? 'g' : ''));
+    };
+
     const handleFindNext = () => {
         if (!searchQuery) return;
-        const index = content.indexOf(searchQuery, selectionRef.current.end); // Search after cursor
-        if (index !== -1) {
-            // Found next
-            const newSelection = { start: index, end: index + searchQuery.length };
-            selectionRef.current = newSelection;
-            // Use setNativeProps to set selection without causing re-render issues
-            inputRef.current?.setNativeProps({ selection: newSelection });
-            inputRef.current?.focus();
-        } else {
+        const regex = getSearchRegex(searchQuery, true);
+        if (!regex) return;
+
+        const currentPos = selectionRef.current.end;
+        let match;
+        let foundMatch = null;
+
+        // Reset regex to start from current position or wrap
+        regex.lastIndex = currentPos;
+        match = regex.exec(content);
+
+        if (!match) {
             // Wrap around
-            const wrapIndex = content.indexOf(searchQuery, 0);
-            if (wrapIndex !== -1) {
-                const newSelection = { start: wrapIndex, end: wrapIndex + searchQuery.length };
-                selectionRef.current = newSelection;
-                inputRef.current?.setNativeProps({ selection: newSelection });
-                inputRef.current?.focus();
-            }
+            regex.lastIndex = 0;
+            match = regex.exec(content);
+        }
+
+        if (match) {
+            const newSelection = { start: match.index, end: match.index + match[0].length };
+            selectionRef.current = newSelection;
+            setSelection(newSelection);
+            inputRef.current?.focus();
         }
     };
 
     const handleReplace = () => {
         if (!searchQuery) return;
-        // Check if current selection matches search query (to valid replacement)
+
+        const regex = getSearchRegex(searchQuery);
+        if (!regex) return;
+
+        // Check if current selection matches
         const currentSelText = content.substring(selectionRef.current.start, selectionRef.current.end);
-        if (currentSelText === searchQuery) {
+        const isMatch = regex.test(currentSelText);
+
+        if (isMatch) {
             const before = content.substring(0, selectionRef.current.start);
             const after = content.substring(selectionRef.current.end);
             const newContent = before + replaceQuery + after;
             setContent(newContent);
+
             // Move cursor after replacement
             const newCursorPos = selectionRef.current.start + replaceQuery.length;
-            selectionRef.current = { start: newCursorPos, end: newCursorPos };
-            // Use setTimeout to allow content to update before setting cursor
-            setTimeout(() => {
-                inputRef.current?.setNativeProps({ selection: { start: newCursorPos, end: newCursorPos } });
-                inputRef.current?.focus();
-            }, 50);
+            const newSelection = { start: newCursorPos, end: newCursorPos };
+            selectionRef.current = newSelection;
+            setSelection(newSelection);
+
+            // Look for next after a brief delay to allow state to settle
+            setTimeout(handleFindNext, 50);
         } else {
-            handleFindNext(); // Move to next to be ready
+            handleFindNext();
         }
     };
 
     const handleReplaceAll = () => {
-        if (!searchQuery) return;
-        const escapedQuery = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(escapedQuery, 'g');
+        const regex = getSearchRegex(searchQuery, true);
+        if (!regex) return;
+
         const newContent = content.replace(regex, replaceQuery);
-        setContent(newContent);
+        if (newContent !== content) {
+            setContent(newContent);
+        }
+    };
+
+    const handleSwap = () => {
+        const temp = searchQuery;
+        setSearchQuery(replaceQuery);
+        setReplaceQuery(temp);
+        setSelection({ start: 0, end: 0 });
+        selectionRef.current = { start: 0, end: 0 };
     };
 
 
@@ -280,9 +307,6 @@ export default function NoteEditorPage() {
 
                 {/* Header Actions */}
                 <View style={{ flexDirection: 'row', gap: 12 }}>
-                    <TouchableOpacity onPress={() => setShowSearch(!showSearch)}>
-                        <Ionicons name={showSearch ? "close-circle" : "search"} size={24} color={showSearch ? theme.colors.accent : theme.colors.text} />
-                    </TouchableOpacity>
                     <TouchableOpacity onPress={() => handleSave(false)} disabled={isSaving}>
                         <Text style={[styles.saveButton, { color: theme.colors.accent }]}>{t('common.save')}</Text>
                     </TouchableOpacity>
@@ -292,6 +316,7 @@ export default function NoteEditorPage() {
             {/* Search Bar */}
             {showSearch && (
                 <View style={[styles.searchToolbar, { backgroundColor: theme.colors.surfaceElevated }]}>
+                    {/* Row 1: Find */}
                     <View style={styles.searchRow}>
                         <TextInput
                             style={[styles.searchInput, { color: theme.colors.text, backgroundColor: theme.colors.bg }]}
@@ -300,14 +325,42 @@ export default function NoteEditorPage() {
                             value={searchQuery}
                             onChangeText={(text) => {
                                 setSearchQuery(text);
-                                // Reset cursor position when search changes
                                 selectionRef.current = { start: 0, end: 0 };
                             }}
                         />
-                        <TouchableOpacity onPress={handleFindNext} style={styles.searchBtn}>
-                            <Ionicons name="arrow-down-outline" size={20} color={theme.colors.text} />
+                        <TouchableOpacity
+                            onPress={handleFindNext}
+                            style={[styles.searchActionBtn, { backgroundColor: theme.colors.accent }]}
+                        >
+                            <Ionicons name="chevron-down" size={18} color="#fff" />
+                            <Text style={styles.searchActionText}>{t('vault.findNext')}</Text>
                         </TouchableOpacity>
                     </View>
+
+                    {/* Row 2: Options & Swap */}
+                    <View style={styles.searchRow}>
+                        <TouchableOpacity
+                            onPress={() => setMatchCase(!matchCase)}
+                            style={[styles.searchOptionPill, matchCase && { backgroundColor: theme.colors.accent + '20', borderColor: theme.colors.accent }]}
+                        >
+                            <Ionicons name={matchCase ? "checkmark-circle" : "ellipse-outline"} size={16} color={matchCase ? theme.colors.accent : theme.colors.textMuted} />
+                            <Text style={[styles.searchOptionPillText, { color: matchCase ? theme.colors.accent : theme.colors.textMuted }]}>{t('vault.matchCase')}</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            onPress={() => setWholeWord(!wholeWord)}
+                            style={[styles.searchOptionPill, wholeWord && { backgroundColor: theme.colors.accent + '20', borderColor: theme.colors.accent }]}
+                        >
+                            <Ionicons name={wholeWord ? "checkmark-circle" : "ellipse-outline"} size={16} color={wholeWord ? theme.colors.accent : theme.colors.textMuted} />
+                            <Text style={[styles.searchOptionPillText, { color: wholeWord ? theme.colors.accent : theme.colors.textMuted }]}>{t('vault.wholeWord')}</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity onPress={handleSwap} style={styles.searchSwapBtn}>
+                            <Ionicons name="swap-vertical" size={20} color={theme.colors.textMuted} />
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Row 3: Replace */}
                     <View style={styles.searchRow}>
                         <TextInput
                             style={[styles.searchInput, { color: theme.colors.text, backgroundColor: theme.colors.bg }]}
@@ -316,11 +369,11 @@ export default function NoteEditorPage() {
                             value={replaceQuery}
                             onChangeText={setReplaceQuery}
                         />
-                        <TouchableOpacity onPress={handleReplace} style={styles.searchBtn}>
-                            <Ionicons name="swap-horizontal-outline" size={20} color={theme.colors.text} />
+                        <TouchableOpacity onPress={handleReplace} style={[styles.searchActionBtn, { backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border }]}>
+                            <Text style={[styles.searchActionText, { color: theme.colors.text }]}>{t('vault.replace')}</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={handleReplaceAll} style={styles.searchBtn}>
-                            <Ionicons name="documents-outline" size={20} color={theme.colors.text} />
+                        <TouchableOpacity onPress={handleReplaceAll} style={[styles.searchActionBtn, { backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border }]}>
+                            <Text style={[styles.searchActionText, { color: theme.colors.text }]}>{t('vault.replaceAll')}</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -414,10 +467,11 @@ export default function NoteEditorPage() {
                             placeholderTextColor={theme.colors.textMuted}
                             value={content}
                             onChangeText={setContent}
+                            selection={selection}
+                            onSelectionChange={handleSelectionChange}
                             multiline
                             textAlignVertical="top"
                             scrollEnabled={true}
-                            onSelectionChange={handleSelectionChange}
                         />
                     )}
 
@@ -430,29 +484,45 @@ export default function NoteEditorPage() {
                     <ScrollView
                         horizontal
                         showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={{ gap: 16, alignItems: 'center', paddingHorizontal: 8 }}
+                        contentContainerStyle={styles.toolbarContent}
                         keyboardShouldPersistTaps="always"
                     >
-                        <Pressable onPressIn={() => insertMarkdown(t('markdown.headingPlaceholder'))}>
-                            <Text style={{ color: theme.colors.text, fontWeight: 'bold', fontSize: 18 }}>H1</Text>
+                        <TouchableOpacity
+                            onPress={() => setShowSearch(!showSearch)}
+                            style={[
+                                styles.toolbarAction,
+                                styles.searchToggleButton,
+                                { backgroundColor: theme.colors.accent },
+                                showSearch && { backgroundColor: theme.colors.surface, borderColor: theme.colors.accent }
+                            ]}
+                        >
+                            <Ionicons
+                                name={showSearch ? "close" : "search"}
+                                size={20}
+                                color={showSearch ? theme.colors.accent : "#fff"}
+                            />
+                        </TouchableOpacity>
+
+                        <Pressable onPressIn={() => insertMarkdown(t('markdown.headingPlaceholder'))} style={styles.toolbarAction}>
+                            <Text style={[styles.toolbarTextIcon, { color: theme.colors.text, fontWeight: 'bold' }]}>H1</Text>
                         </Pressable>
-                        <Pressable onPressIn={() => insertMarkdown(t('markdown.boldPlaceholder'))} style={styles.textIconParams}>
-                            <Text style={{ color: theme.colors.text, fontWeight: '900', fontSize: 18, fontFamily: 'serif' }}>B</Text>
+                        <Pressable onPressIn={() => insertMarkdown(t('markdown.boldPlaceholder'))} style={styles.toolbarAction}>
+                            <Text style={[styles.toolbarTextIcon, { color: theme.colors.text, fontWeight: '900', fontFamily: 'serif' }]}>B</Text>
                         </Pressable>
-                        <Pressable onPressIn={() => insertMarkdown(t('markdown.italicPlaceholder'))} style={styles.textIconParams}>
-                            <Text style={{ color: theme.colors.text, fontStyle: 'italic', fontWeight: 'bold', fontSize: 18, fontFamily: 'serif' }}>I</Text>
+                        <Pressable onPressIn={() => insertMarkdown(t('markdown.italicPlaceholder'))} style={styles.toolbarAction}>
+                            <Text style={[styles.toolbarTextIcon, { color: theme.colors.text, fontStyle: 'italic', fontWeight: 'bold', fontFamily: 'serif' }]}>I</Text>
                         </Pressable>
-                        <Pressable onPressIn={() => insertMarkdown(t('markdown.listPlaceholder'))}>
-                            <Ionicons name="list" size={24} color={theme.colors.text} />
+                        <Pressable onPressIn={() => insertMarkdown(t('markdown.listPlaceholder'))} style={styles.toolbarAction}>
+                            <Ionicons name="list" size={22} color={theme.colors.text} />
                         </Pressable>
-                        <Pressable onPressIn={() => insertMarkdown(t('markdown.quotePlaceholder'))}>
-                            <Ionicons name="chatbox-ellipses-outline" size={24} color={theme.colors.text} />
+                        <Pressable onPressIn={() => insertMarkdown(t('markdown.quotePlaceholder'))} style={styles.toolbarAction}>
+                            <Ionicons name="chatbox-ellipses-outline" size={22} color={theme.colors.text} />
                         </Pressable>
-                        <Pressable onPressIn={() => insertMarkdown(t('markdown.codePlaceholder'))}>
-                            <Ionicons name="code-slash" size={24} color={theme.colors.text} />
+                        <Pressable onPressIn={() => insertMarkdown(t('markdown.codePlaceholder'))} style={styles.toolbarAction}>
+                            <Ionicons name="code-slash" size={22} color={theme.colors.text} />
                         </Pressable>
-                        <Pressable onPressIn={() => insertMarkdown(t('markdown.linkPlaceholder'))}>
-                            <Ionicons name="link" size={24} color={theme.colors.text} />
+                        <Pressable onPressIn={() => insertMarkdown(t('markdown.linkPlaceholder'))} style={styles.toolbarAction}>
+                            <Ionicons name="link" size={22} color={theme.colors.text} />
                         </Pressable>
                     </ScrollView>
                 </View>
@@ -555,15 +625,45 @@ const styles = StyleSheet.create({
         marginBottom: 20,
     },
     toolbar: {
-        flexDirection: 'row',
-        padding: 12,
-        paddingBottom: 30, // Safe area padding
         borderTopWidth: 1,
-        alignItems: 'center',
+        paddingVertical: 12,
+        paddingBottom: Platform.OS === 'ios' ? 34 : 20, // Better safe area handling
     },
-    textIconParams: {
-        width: 30,
+    toolbarContent: {
+        flexGrow: 1,
+        justifyContent: 'center', // Centers items horizontally if they don't overflow
         alignItems: 'center',
+        paddingHorizontal: 16,
+        gap: 16,
+    },
+    toolbarAction: {
+        height: 40,
+        minWidth: 32,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    toolbarTextIcon: {
+        fontSize: 18,
+    },
+    toolbarDivider: {
+        width: 1,
+        height: 24,
+        backgroundColor: 'rgba(0,0,0,0.1)',
+        marginHorizontal: 4,
+    },
+    searchToggleButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        borderWidth: 2,
+        borderColor: '#fff',
+        // Shadow for iOS
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 5,
+        // Shadow for Android
+        elevation: 6,
     },
     // Search Toolbar
     searchToolbar: {
@@ -586,6 +686,44 @@ const styles = StyleSheet.create({
     },
     searchBtn: {
         padding: 8,
+    },
+    searchActionBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        borderRadius: 8,
+        gap: 4,
+    },
+    searchActionText: {
+        fontSize: 12,
+        fontFamily: 'Comfortaa_700Bold',
+        color: '#fff',
+    },
+    searchOptionPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(0,0,0,0.05)',
+        gap: 6,
+        flex: 1,
+    },
+    searchOptionPillText: {
+        fontSize: 12,
+        fontFamily: 'Comfortaa_500Medium',
+    },
+    searchSwapBtn: {
+        padding: 8,
+        marginLeft: 4,
+    },
+    searchDivider: {
+        width: 1,
+        height: 20,
+        backgroundColor: 'rgba(0,0,0,0.1)',
+        marginHorizontal: 4,
     },
     // Auto-save Indicator
     savingIndicator: {
