@@ -84,7 +84,10 @@ export default function NoteEditorPage() {
                 setIsCreated(true);
                 setLastSavedTitle(title);
                 setLastSavedContent(content);
-                queryClient.invalidateQueries({ queryKey: ['notes'] });
+                console.log('[Editor] Auto-create note success, invalidating notes...');
+                await queryClient.invalidateQueries({ queryKey: ['notes'] });
+                await queryClient.refetchQueries({ queryKey: ['notes'] }); // Also force refetch for background updates
+                console.log('[Editor] Notes invalidated');
             } catch (error: any) {
                 console.error('Auto-create failed:', error);
             } finally {
@@ -111,8 +114,10 @@ export default function NoteEditorPage() {
                 await api.updateNote(noteId, { title, content });
                 setLastSavedContent(content);
                 setLastSavedTitle(title);
-                queryClient.invalidateQueries({ queryKey: ['note', noteId] });
-                queryClient.invalidateQueries({ queryKey: ['notes'] });
+                console.log('[Editor] Auto-save note success, invalidating notes...');
+                await queryClient.invalidateQueries({ queryKey: ['note', noteId] });
+                await queryClient.invalidateQueries({ queryKey: ['notes'] });
+                console.log('[Editor] Notes invalidated');
             } catch (error: any) {
                 console.error('Auto-save failed:', error);
             } finally {
@@ -159,7 +164,6 @@ export default function NoteEditorPage() {
                 await api.updateNote(noteId, { title, content });
                 setLastSavedContent(content);
                 setLastSavedTitle(title);
-                queryClient.invalidateQueries({ queryKey: ['note', noteId] });
             } else if (!isCreated) {
                 const newNote = await api.createNote({ title, content });
                 setNoteId(newNote.id);
@@ -167,8 +171,15 @@ export default function NoteEditorPage() {
                 setLastSavedTitle(title);
                 setLastSavedContent(content);
             }
+
+            console.log('[Editor] Manual save note success, invalidating notes...');
+            await queryClient.invalidateQueries({ queryKey: ['notes'] });
+            if (noteId) {
+                await queryClient.invalidateQueries({ queryKey: ['note', noteId] });
+            }
+            console.log('[Editor] Notes invalidated, navigating back');
+
             if (!silent) router.back();
-            queryClient.invalidateQueries({ queryKey: ['notes'] });
         } catch (error: any) {
             if (!silent) showError(t('errors.error'), error.message || t('errors.default'));
         } finally {

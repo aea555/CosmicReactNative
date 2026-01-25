@@ -288,7 +288,26 @@ export default function AdvancedSettingsPage() {
                 showCancel
                 variant="danger"
                 loading={loading}
-            />
+            >
+                <View style={{ gap: 16, marginTop: 12, marginBottom: 24, width: '100%' }}>
+                    <View style={{ backgroundColor: theme.colors.warning + '15', padding: 12, borderRadius: 12, borderLeftWidth: 4, borderLeftColor: theme.colors.warning }}>
+                        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                            <Ionicons name="warning-outline" size={20} color={theme.colors.warning} />
+                            <Text style={{ fontSize: 14, fontFamily: 'Comfortaa_700Bold', color: theme.colors.warning }}>{t('common.important')}</Text>
+                        </View>
+                        <Text style={{ fontSize: 13, fontFamily: 'Comfortaa_500Medium', color: theme.colors.text, lineHeight: 18 }}>
+                            {t('settings.exportBeforeDelete')}
+                        </Text>
+                    </View>
+
+                    <Button
+                        title={t('settings.exportButtonShort')}
+                        onPress={performExport}
+                        variant="primary"
+                        icon={<Ionicons name="download-outline" size={18} color="#fff" />}
+                    />
+                </View>
+            </Modal>
 
             {/* OTP Modals */}
             <OTPModal

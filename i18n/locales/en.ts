@@ -26,7 +26,8 @@ export default {
         ok: 'OK',
         success: 'Success',
         error: 'Error',
-        saving: 'Kaydediliyor...',
+        important: 'Important',
+        saving: 'Saving...',
         next: "Next",
         verify: "Verify"
     },
@@ -262,6 +263,8 @@ export default {
         exportFormatCSV: 'CSV (Readable - Not Secure)',
         exportWarning: 'Warning: CSV files are not encrypted. Anyone with access to the file can read your passwords.',
         deleteAccountWarning: 'This will permanently delete your account and all data. This action cannot be undone.',
+        exportBeforeDelete: 'Highly Recommended: Export your secrets and notes before deleting your account to avoid permanent data loss.',
+        exportButtonShort: 'Export Data Now',
         exportSuccess: "Export Successful! Make sure to keep your export file secure."
     },
     errors: {

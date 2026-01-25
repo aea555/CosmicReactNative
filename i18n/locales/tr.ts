@@ -28,7 +28,8 @@ export default {
         success: 'Başarılı',
         saving: 'Kaydediliyor...',
         next: "Devam",
-        verify: "Doğrula"
+        verify: "Doğrula",
+        important: 'Önemli',
     },
     auth: {
         signIn: 'Giriş Yap',
@@ -262,6 +263,8 @@ export default {
         exportFormatCSV: 'CSV (Okunabilir - Güvenli Değil)',
         exportWarning: 'Uyarı: CSV dosyaları şifrelenmez. Dosyaya erişimi olan herkes şifrelerinizi okuyabilir.',
         deleteAccountWarning: 'Bu işlem hesabınızı ve tüm verilerinizi kalıcı olarak silecektir. Geri alınamaz. Bu işlemi gerçekleştirmek istediğinizden emin misiniz?',
+        exportBeforeDelete: 'Şiddetle Tavsiye Edilir: Kalıcı veri kaybını önlemek için hesabınızı silmeden önce sırlarınızı ve notlarınızı dışa aktarmanız önerilir.',
+        exportButtonShort: 'Verileri Şimdi Dışa Aktar',
         exportSuccess: "Dışa Aktarma başarılı! Dışa aktarılmış dosyanızın güvenli bir şekilde saklandığından emin olun."
     },
     errors: {

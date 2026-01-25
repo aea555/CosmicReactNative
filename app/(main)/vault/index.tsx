@@ -52,8 +52,17 @@ function VaultContent() {
         refetch: refetchSecrets,
     } = useQuery({
         queryKey: ['secrets'],
-        queryFn: () => api.getSecrets(),
+        queryFn: async () => {
+            console.log('[Vault] Fetching secrets...');
+            const data = await api.getSecrets();
+            console.log('[Vault] Secrets fetched:', data.length);
+            return data;
+        },
     });
+
+    useEffect(() => {
+        console.log('[Vault] Secrets state updated:', secrets.length);
+    }, [secrets]);
 
     // Autofill - Auto Process Pending Saves (No UI)
     useAutoProcessPendingSaves(secrets);
@@ -123,16 +132,27 @@ function VaultContent() {
         refetch: refetchNotes,
     } = useQuery({
         queryKey: ['notes'],
-        queryFn: () => api.getNotes(),
+        queryFn: async () => {
+            console.log('[Vault] Fetching notes...');
+            const data = await api.getNotes();
+            console.log('[Vault] Notes fetched:', data.length);
+            return data;
+        },
     });
+
+    useEffect(() => {
+        console.log('[Vault] Notes state updated:', notes.length);
+    }, [notes]);
 
     const isLoading = secretsLoading || notesLoading;
 
     // Mutations
     const createSecretMutation = useMutation({
         mutationFn: (data: Parameters<typeof api.createSecret>[0]) => api.createSecret(data),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['secrets'] });
+        onSuccess: async (newSecret) => {
+            console.log('[Mutation] Create secret success, invalidating secrets...', newSecret.id);
+            await qc.invalidateQueries({ queryKey: ['secrets'] });
+            console.log('[Mutation] Secrets invalidated');
             resetForm();
             setCreateModalVisible(false);
         },
@@ -141,8 +161,8 @@ function VaultContent() {
     const updateSecretMutation = useMutation({
         mutationFn: ({ id, data }: { id: string; data: Parameters<typeof api.updateSecret>[1] }) =>
             api.updateSecret(id, data),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['secrets'] });
+        onSuccess: async () => {
+            await qc.invalidateQueries({ queryKey: ['secrets'] });
             resetForm();
             setEditModalVisible(false);
             setEditTarget(null);
@@ -151,8 +171,8 @@ function VaultContent() {
 
     const deleteSecretMutation = useMutation({
         mutationFn: (id: string) => api.deleteSecret(id),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['secrets'] });
+        onSuccess: async () => {
+            await qc.invalidateQueries({ queryKey: ['secrets'] });
             setDeleteModalVisible(false);
             setDeleteTarget(null);
         },
@@ -168,13 +188,17 @@ function VaultContent() {
                 url: secret.url,
                 telephone_number: secret.telephone_number,
             }),
-        onSuccess: () => qc.invalidateQueries({ queryKey: ['secrets'] }),
+        onSuccess: async () => {
+            await qc.invalidateQueries({ queryKey: ['secrets'] });
+        },
     });
 
     const createNoteMutation = useMutation({
         mutationFn: (data: Parameters<typeof api.createNote>[0]) => api.createNote(data),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['notes'] });
+        onSuccess: async (newNote) => {
+            console.log('[Mutation] Create note success, invalidating notes...', newNote.id);
+            await qc.invalidateQueries({ queryKey: ['notes'] });
+            console.log('[Mutation] Notes invalidated');
             resetForm();
             setCreateModalVisible(false);
         },
@@ -183,8 +207,8 @@ function VaultContent() {
     const updateNoteMutation = useMutation({
         mutationFn: ({ id, data }: { id: string; data: Parameters<typeof api.updateNote>[1] }) =>
             api.updateNote(id, data),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['notes'] });
+        onSuccess: async () => {
+            await qc.invalidateQueries({ queryKey: ['notes'] });
             resetForm();
             setEditModalVisible(false);
             setEditTarget(null);
@@ -193,8 +217,8 @@ function VaultContent() {
 
     const deleteNoteMutation = useMutation({
         mutationFn: (id: string) => api.deleteNote(id),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['notes'] });
+        onSuccess: async () => {
+            await qc.invalidateQueries({ queryKey: ['notes'] });
             setDeleteModalVisible(false);
             setDeleteTarget(null);
         },
@@ -206,7 +230,9 @@ function VaultContent() {
                 title: `${note.title} (copy)`,
                 content: note.content,
             }),
-        onSuccess: () => qc.invalidateQueries({ queryKey: ['notes'] }),
+        onSuccess: async () => {
+            await qc.invalidateQueries({ queryKey: ['notes'] });
+        },
     });
 
     const handleRefresh = useCallback(() => {
@@ -219,12 +245,13 @@ function VaultContent() {
         if (!searchQuery) return secrets;
         const query = searchQuery.toLowerCase();
         return secrets.filter((secret) => {
-            if (secret.url?.toLowerCase().includes(query)) return true;
-            if (secret.email?.toLowerCase().includes(query)) return true;
-            if (secret.username?.toLowerCase().includes(query)) return true;
-            if (secret.telephone_number?.toLowerCase().includes(query)) return true;
-            if (secret.title?.toLowerCase().includes(query)) return true;
-            return false;
+            const matchTitle = secret.title?.toLowerCase()?.includes(query);
+            const matchEmail = secret.email?.toLowerCase()?.includes(query);
+            const matchUsername = secret.username?.toLowerCase()?.includes(query);
+            const matchUrl = secret.url?.toLowerCase()?.includes(query);
+            const matchPhone = secret.telephone_number?.toLowerCase()?.includes(query);
+
+            return !!(matchTitle || matchEmail || matchUsername || matchUrl || matchPhone);
         });
     }, [secrets, searchQuery]);
 
@@ -232,8 +259,11 @@ function VaultContent() {
         if (!searchQuery) return notes;
         const query = searchQuery.toLowerCase();
         return notes.filter(
-            (note) =>
-                note.title?.toLowerCase().includes(query) || note.content?.toLowerCase().includes(query)
+            (note) => {
+                const matchTitle = note.title?.toLowerCase()?.includes(query);
+                const matchContent = note.content?.toLowerCase()?.includes(query);
+                return !!(matchTitle || matchContent);
+            }
         );
     }, [notes, searchQuery]);
 
@@ -820,8 +850,9 @@ function VaultContent() {
             return dateB - dateA;
         });
 
+        console.log('[Vault] Recalculating combinedItems:', items.length);
         return items;
-    }, [filteredSecrets, filteredNotes, showSecrets, showNotes, showFavoritesOnly]);
+    }, [filteredSecrets, filteredNotes, showSecrets, showNotes, showFavoritesOnly, searchQuery]);
 
     // --- Stable Handlers for Item Components ---
     const handlePressSecret = useCallback((secret: Secret) => {
@@ -1085,20 +1116,16 @@ function VaultContent() {
             ) : (
                 <FlatList
                     data={combinedItems}
+                    extraData={combinedItems}
                     renderItem={renderItem}
                     keyExtractor={(item) => `${item.type}-${item.item.id}`}
                     contentContainerStyle={styles.listContent}
                     showsVerticalScrollIndicator={false}
                     refreshControl={<RefreshControl refreshing={isLoading} onRefresh={handleRefresh} tintColor={theme.colors.accent} />}
-                    windowSize={5} // Reduced from 10 to optimize memory/re-renders
-                    initialNumToRender={10} // Reduced from 15
-                    maxToRenderPerBatch={5} // Reduced from 10
-                    removeClippedSubviews={true}
-                    getItemLayout={(data, index) => ({
-                        length: 80, // Approximate height (64 item + 8 margin + padding?) 
-                        offset: 80 * index,
-                        index,
-                    })}
+                    windowSize={10}
+                    initialNumToRender={10}
+                    maxToRenderPerBatch={10}
+                    removeClippedSubviews={false}
                     ListEmptyComponent={
                         <View style={styles.emptyContainer}>
                             <Ionicons name="file-tray-outline" size={64} color={theme.colors.textMuted} />
