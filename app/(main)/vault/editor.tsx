@@ -24,8 +24,9 @@ import {
 import Markdown from 'react-native-markdown-display';
 
 export default function NoteEditorPage() {
-    const { id } = useLocalSearchParams<{ id: string }>();
-    const isEditing = !!id;
+    const { id: initialId } = useLocalSearchParams<{ id: string }>();
+    const [noteId, setNoteId] = useState<string | undefined>(initialId);
+    const isEditing = !!noteId;
     const { theme } = useTheme();
     const { t } = useTranslation();
     const router = useRouter();
@@ -36,6 +37,11 @@ export default function NoteEditorPage() {
     const [isPreviewMode, setIsPreviewMode] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [showSavingIndicator, setShowSavingIndicator] = useState(false);
+
+    // Track if we've created the note already
+    const [isCreated, setIsCreated] = useState(!!initialId);
+    const isCreatingRef = useRef(false);
 
     // Cursor position tracking via ref (uncontrolled)
     const selectionRef = useRef({ start: 0, end: 0 });
@@ -46,18 +52,86 @@ export default function NoteEditorPage() {
     const [errorMessage, setErrorMessage] = useState('');
     const [errorTitle, setErrorTitle] = useState('');
 
+    const [lastSavedContent, setLastSavedContent] = useState('');
+    const [lastSavedTitle, setLastSavedTitle] = useState('');
+
+    // Search & Replace State
+    const [showSearch, setShowSearch] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [replaceQuery, setReplaceQuery] = useState('');
+    const [searchMatchCount, setSearchMatchCount] = useState(0);
+    const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
+
     useEffect(() => {
-        if (isEditing) {
+        if (initialId) {
             loadNote();
         }
-    }, [id]);
+    }, [initialId]);
+
+    // Debounced auto-create for new notes (when title is entered)
+    useEffect(() => {
+        if (isCreated || isCreatingRef.current || !title.trim() || isLoading) return;
+
+        const timer = setTimeout(async () => {
+            if (isCreatingRef.current) return;
+            isCreatingRef.current = true;
+
+            try {
+                setIsSaving(true);
+                setShowSavingIndicator(true);
+                const newNote = await api.createNote({ title, content });
+                setNoteId(newNote.id);
+                setIsCreated(true);
+                setLastSavedTitle(title);
+                setLastSavedContent(content);
+                queryClient.invalidateQueries({ queryKey: ['notes'] });
+            } catch (error: any) {
+                console.error('Auto-create failed:', error);
+            } finally {
+                setIsSaving(false);
+                isCreatingRef.current = false;
+                setTimeout(() => setShowSavingIndicator(false), 500);
+            }
+        }, 1500); // 1.5s debounce for create
+
+        return () => clearTimeout(timer);
+    }, [title, isCreated, isLoading]);
+
+    // Debounced auto-save for existing notes
+    useEffect(() => {
+        if (!isCreated || !noteId || !title.trim() || isLoading || isSaving) return;
+
+        // Skip if nothing has changed
+        if (content === lastSavedContent && title === lastSavedTitle) return;
+
+        const timer = setTimeout(async () => {
+            try {
+                setIsSaving(true);
+                setShowSavingIndicator(true);
+                await api.updateNote(noteId, { title, content });
+                setLastSavedContent(content);
+                setLastSavedTitle(title);
+                queryClient.invalidateQueries({ queryKey: ['note', noteId] });
+                queryClient.invalidateQueries({ queryKey: ['notes'] });
+            } catch (error: any) {
+                console.error('Auto-save failed:', error);
+            } finally {
+                setIsSaving(false);
+                setTimeout(() => setShowSavingIndicator(false), 500);
+            }
+        }, 2000); // 2s debounce for save
+
+        return () => clearTimeout(timer);
+    }, [content, title, lastSavedContent, lastSavedTitle, isCreated, noteId]);
 
     const loadNote = async () => {
         try {
             setIsLoading(true);
-            const data = await api.getNote(id);
+            const data = await api.getNote(initialId!);
             setTitle(data.title);
             setContent(data.content || '');
+            setLastSavedContent(data.content || '');
+            setLastSavedTitle(data.title);
         } catch (error) {
             showError(t('errors.error'), t('errors.noteNotFound'));
             router.back();
@@ -72,38 +146,99 @@ export default function NoteEditorPage() {
         setErrorModalVisible(true);
     };
 
-    const handleSave = async () => {
+    const handleSave = async (silent = false) => {
         if (!title.trim()) {
-            showError(t('errors.validationError'), t('vault.titleRequired'));
+            if (!silent) showError(t('errors.validationError'), t('vault.titleRequired'));
             return;
         }
 
         try {
             setIsSaving(true);
-            if (isEditing) {
-                await api.updateNote(id, { title, content });
-                queryClient.invalidateQueries({ queryKey: ['note', id] });
-            } else {
-                await api.createNote({ title, content });
+            setShowSavingIndicator(true);
+            if (isCreated && noteId) {
+                await api.updateNote(noteId, { title, content });
+                setLastSavedContent(content);
+                setLastSavedTitle(title);
+                queryClient.invalidateQueries({ queryKey: ['note', noteId] });
+            } else if (!isCreated) {
+                const newNote = await api.createNote({ title, content });
+                setNoteId(newNote.id);
+                setIsCreated(true);
+                setLastSavedTitle(title);
+                setLastSavedContent(content);
             }
+            if (!silent) router.back();
             queryClient.invalidateQueries({ queryKey: ['notes'] });
-            router.back();
         } catch (error: any) {
-            showError(t('errors.error'), error.message || t('errors.default'));
+            if (!silent) showError(t('errors.error'), error.message || t('errors.default'));
         } finally {
             setIsSaving(false);
+            setTimeout(() => setShowSavingIndicator(false), 500);
         }
     };
 
     const handleSelectionChange = (event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
-        // Store selection for toolbar use - this runs on every cursor move
-        // For performance, we only store in ref, no state updates
-        selectionRef.current = event.nativeEvent.selection;
+        const newSelection = event.nativeEvent.selection;
+        selectionRef.current = newSelection;
+        // Verify if we need to update state (e.g. for search navigation)
+        // setSelection(newSelection); // Causing re-renders?
     };
 
     const insertMarkdown = (syntax: string) => {
-        // Append at end for simplicity and performance
         setContent(prev => prev + syntax);
+    };
+
+    // Search Logic
+    const handleFindNext = () => {
+        if (!searchQuery) return;
+        const index = content.indexOf(searchQuery, selectionRef.current.end); // Search after cursor
+        if (index !== -1) {
+            // Found next
+            const newSelection = { start: index, end: index + searchQuery.length };
+            selectionRef.current = newSelection;
+            // Use setNativeProps to set selection without causing re-render issues
+            inputRef.current?.setNativeProps({ selection: newSelection });
+            inputRef.current?.focus();
+        } else {
+            // Wrap around
+            const wrapIndex = content.indexOf(searchQuery, 0);
+            if (wrapIndex !== -1) {
+                const newSelection = { start: wrapIndex, end: wrapIndex + searchQuery.length };
+                selectionRef.current = newSelection;
+                inputRef.current?.setNativeProps({ selection: newSelection });
+                inputRef.current?.focus();
+            }
+        }
+    };
+
+    const handleReplace = () => {
+        if (!searchQuery) return;
+        // Check if current selection matches search query (to valid replacement)
+        const currentSelText = content.substring(selectionRef.current.start, selectionRef.current.end);
+        if (currentSelText === searchQuery) {
+            const before = content.substring(0, selectionRef.current.start);
+            const after = content.substring(selectionRef.current.end);
+            const newContent = before + replaceQuery + after;
+            setContent(newContent);
+            // Move cursor after replacement
+            const newCursorPos = selectionRef.current.start + replaceQuery.length;
+            selectionRef.current = { start: newCursorPos, end: newCursorPos };
+            // Use setTimeout to allow content to update before setting cursor
+            setTimeout(() => {
+                inputRef.current?.setNativeProps({ selection: { start: newCursorPos, end: newCursorPos } });
+                inputRef.current?.focus();
+            }, 50);
+        } else {
+            handleFindNext(); // Move to next to be ready
+        }
+    };
+
+    const handleReplaceAll = () => {
+        if (!searchQuery) return;
+        const escapedQuery = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(escapedQuery, 'g');
+        const newContent = content.replace(regex, replaceQuery);
+        setContent(newContent);
     };
 
 
@@ -126,17 +261,59 @@ export default function NoteEditorPage() {
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                     <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
                 </TouchableOpacity>
-                <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-                    {isEditing ? t('vault.editNote') : t('vault.newNote')}
-                </Text>
-                <TouchableOpacity onPress={handleSave} disabled={isSaving}>
-                    {isSaving ? (
-                        <ActivityIndicator color={theme.colors.accent} />
-                    ) : (
+                <View style={{ flex: 1, paddingHorizontal: 12 }}>
+                    <Text style={[styles.headerTitle, { color: theme.colors.text }]} numberOfLines={1}>
+                        {title || (isEditing ? t('vault.editNote') : t('vault.newNote'))}
+                    </Text>
+                </View>
+
+                {/* Header Actions */}
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <TouchableOpacity onPress={() => setShowSearch(!showSearch)}>
+                        <Ionicons name={showSearch ? "close-circle" : "search"} size={24} color={showSearch ? theme.colors.accent : theme.colors.text} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleSave(false)} disabled={isSaving}>
                         <Text style={[styles.saveButton, { color: theme.colors.accent }]}>{t('common.save')}</Text>
-                    )}
-                </TouchableOpacity>
+                    </TouchableOpacity>
+                </View>
             </View>
+
+            {/* Search Bar */}
+            {showSearch && (
+                <View style={[styles.searchToolbar, { backgroundColor: theme.colors.surfaceElevated }]}>
+                    <View style={styles.searchRow}>
+                        <TextInput
+                            style={[styles.searchInput, { color: theme.colors.text, backgroundColor: theme.colors.bg }]}
+                            placeholder={t('vault.findPlaceholder')}
+                            placeholderTextColor={theme.colors.textMuted}
+                            value={searchQuery}
+                            onChangeText={(text) => {
+                                setSearchQuery(text);
+                                // Reset cursor position when search changes
+                                selectionRef.current = { start: 0, end: 0 };
+                            }}
+                        />
+                        <TouchableOpacity onPress={handleFindNext} style={styles.searchBtn}>
+                            <Ionicons name="arrow-down-outline" size={20} color={theme.colors.text} />
+                        </TouchableOpacity>
+                    </View>
+                    <View style={styles.searchRow}>
+                        <TextInput
+                            style={[styles.searchInput, { color: theme.colors.text, backgroundColor: theme.colors.bg }]}
+                            placeholder={t('vault.replacePlaceholder')}
+                            placeholderTextColor={theme.colors.textMuted}
+                            value={replaceQuery}
+                            onChangeText={setReplaceQuery}
+                        />
+                        <TouchableOpacity onPress={handleReplace} style={styles.searchBtn}>
+                            <Ionicons name="swap-horizontal-outline" size={20} color={theme.colors.text} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={handleReplaceAll} style={styles.searchBtn}>
+                            <Ionicons name="documents-outline" size={20} color={theme.colors.text} />
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            )}
 
             {/* Mode Switch */}
             <View style={styles.modeSwitch}>
@@ -198,6 +375,7 @@ export default function NoteEditorPage() {
                                     heading2: { color: theme.colors.accent, fontFamily: 'Comfortaa_700Bold' },
                                     code_inline: { backgroundColor: theme.colors.surface, color: theme.colors.text },
                                     code_block: { backgroundColor: theme.colors.surface, color: theme.colors.text },
+                                    fence: { backgroundColor: theme.colors.surface, color: theme.colors.text, padding: 12, borderRadius: 8 },
                                     blockquote: {
                                         backgroundColor: theme.colors.surface,
                                         borderLeftColor: theme.colors.accent,
@@ -228,6 +406,7 @@ export default function NoteEditorPage() {
                             multiline
                             textAlignVertical="top"
                             scrollEnabled={true}
+                            onSelectionChange={handleSelectionChange}
                         />
                     )}
 
@@ -278,6 +457,16 @@ export default function NoteEditorPage() {
                 onConfirm={() => setErrorModalVisible(false)}
                 variant="danger"
             />
+
+            {/* Auto-save Indicator - Bottom Right */}
+            {showSavingIndicator && (
+                <View style={styles.savingIndicator}>
+                    <ActivityIndicator size="small" color={theme.colors.accent} />
+                    <Text style={[styles.savingText, { color: theme.colors.accent }]}>
+                        {t('common.saving')}
+                    </Text>
+                </View>
+            )}
         </KeyboardAvoidingView>
     );
 }
@@ -303,6 +492,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 18,
         fontFamily: 'Comfortaa_700Bold',
+        flex: 1,
     },
     saveButton: {
         fontSize: 16,
@@ -363,6 +553,45 @@ const styles = StyleSheet.create({
     textIconParams: {
         width: 30,
         alignItems: 'center',
-    }
+    },
+    // Search Toolbar
+    searchToolbar: {
+        padding: 12,
+        gap: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(0,0,0,0.05)',
+    },
+    searchRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    searchInput: {
+        flex: 1,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 8,
+        fontSize: 14,
+    },
+    searchBtn: {
+        padding: 8,
+    },
+    // Auto-save Indicator
+    savingIndicator: {
+        position: 'absolute',
+        bottom: 100,
+        right: 20,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 20,
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    },
+    savingText: {
+        fontSize: 12,
+        fontFamily: 'Comfortaa_500Medium',
+    },
 });
 

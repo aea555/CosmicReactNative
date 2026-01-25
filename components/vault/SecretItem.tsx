@@ -1,8 +1,8 @@
 import { getDomainColor } from '@/constants/themes';
 import { useTheme } from '@/contexts/ThemeContext';
-import type { Secret } from '@/services/api';
-import { useFavoritesStore } from '@/stores/favorites';
+import { api, type Secret } from '@/services/api';
 import { Ionicons } from '@expo/vector-icons';
+import { useQueryClient } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -20,19 +20,19 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface SecretItemProps {
     secret: Secret;
-    onPress: () => void;
-    onEdit: () => void;
-    onClone: () => void;
-    onDelete: () => void;
-    onFavoriteToggle?: () => void;
+    onPress: (secret: Secret) => void;
+    onEdit: (secret: Secret) => void;
+    onClone: (secret: Secret) => void;
+    onDelete: (secret: Secret) => void;
+    onFavoriteToggle?: (secret: Secret) => void;
     // Selection Props
     selectionMode?: boolean;
     isSelected?: boolean;
-    onSelect?: () => void;
-    onLongPress?: () => void;
+    onSelect?: (id: string, type: 'secret') => void;
+    onLongPress?: (id: string, type: 'secret') => void;
 }
 
-export function SecretItem({
+export const SecretItem = React.memo(function SecretItem({
     secret,
     onPress,
     onEdit,
@@ -46,14 +46,14 @@ export function SecretItem({
 }: SecretItemProps) {
     const { t } = useTranslation();
     const { theme } = useTheme();
-    const isFavorited = useFavoritesStore((state) => state.favoriteSecretIds.has(secret.id));
-    const toggleSecretFavorite = useFavoritesStore((state) => state.toggleSecretFavorite);
+    const queryClient = useQueryClient();
+    // Use server-side is_favorite property
+    const isFavorited = !!secret.is_favorite;
     const [showMenu, setShowMenu] = React.useState(false);
     const [menuPosition, setMenuPosition] = React.useState({ top: 0, right: 0 });
     const menuButtonRef = React.useRef<View>(null);
 
     const domainColor = getDomainColor(secret.url);
-
 
     const secondaryText = secret.email || secret.username || secret.telephone_number || '';
 
@@ -63,10 +63,20 @@ export function SecretItem({
         }
     };
 
-    const handleFavorite = () => {
-        toggleSecretFavorite(secret.id);
+    const handleFavorite = async () => {
         setShowMenu(false);
-        onFavoriteToggle?.();
+        try {
+            if (isFavorited) {
+                await api.unfavoriteSecret(secret.id);
+            } else {
+                await api.favoriteSecret(secret.id);
+            }
+            queryClient.invalidateQueries({ queryKey: ['secrets'] });
+            queryClient.invalidateQueries({ queryKey: ['secret', secret.id] });
+            onFavoriteToggle?.(secret);
+        } catch (error) {
+            console.error('Favorite toggle failed:', error);
+        }
     };
 
     const handleShowMenu = () => {
@@ -80,20 +90,12 @@ export function SecretItem({
         });
     };
 
-    const handlePress = () => {
-        if (selectionMode) {
-            onSelect?.();
-        } else {
-            onPress();
-        }
-    };
-
     return (
         <>
             <TouchableOpacity
                 style={[styles.container, { backgroundColor: theme.colors.surface }]}
-                onPress={handlePress}
-                onLongPress={onLongPress}
+                onPress={() => selectionMode ? onSelect?.(secret.id, 'secret') : onPress(secret)}
+                onLongPress={() => onLongPress?.(secret.id, 'secret')}
                 delayLongPress={300}
                 activeOpacity={0.7}
             >
@@ -185,15 +187,15 @@ export function SecretItem({
                                     {isFavorited ? t('common.unfavorite') : t('common.favorite')}
                                 </Text>
                             </TouchableOpacity>
-                            <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); onEdit(); }}>
+                            <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); onEdit(secret); }}>
                                 <Ionicons name="create-outline" size={18} color={theme.colors.text} />
                                 <Text style={[styles.menuText, { color: theme.colors.text }]}>{t('common.edit')}</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); onClone(); }}>
+                            <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); onClone(secret); }}>
                                 <Ionicons name="duplicate-outline" size={18} color={theme.colors.text} />
                                 <Text style={[styles.menuText, { color: theme.colors.text }]}>{t('common.clone')}</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity style={[styles.menuItem, styles.deleteItem]} onPress={() => { setShowMenu(false); onDelete(); }}>
+                            <TouchableOpacity style={[styles.menuItem, styles.deleteItem]} onPress={() => { setShowMenu(false); onDelete(secret); }}>
                                 <Ionicons name="trash-outline" size={18} color={theme.colors.error} />
                                 <Text style={[styles.menuText, { color: theme.colors.error }]}>{t('common.delete')}</Text>
                             </TouchableOpacity>
@@ -203,7 +205,7 @@ export function SecretItem({
             </Modal>
         </>
     );
-}
+});
 
 const styles = StyleSheet.create({
     container: {
@@ -270,7 +272,7 @@ const styles = StyleSheet.create({
     },
     menuContainer: {
         position: 'absolute',
-        width: 180,
+        minWidth: 180,
         borderRadius: 12,
         padding: 8,
         elevation: 5,

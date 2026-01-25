@@ -26,6 +26,9 @@ export default {
         ok: 'OK',
         success: 'Success',
         error: 'Error',
+        saving: 'Kaydediliyor...',
+        next: "Next",
+        verify: "Verify"
     },
     auth: {
         signIn: 'Sign In',
@@ -69,6 +72,14 @@ export default {
         networkError: 'Network error. Please try again.',
         emailRequired: 'Email Required',
         emailRequiredDesc: 'Please enter your email to resend verification.',
+        changeEmail: 'Change Email',
+        changeEmailDesc: 'Update your account email address',
+        deleteAccount: 'Delete Account',
+        deleteAccountDesc: 'Permanently remove your account and data',
+        newEmail: 'New Email',
+        emailChanged: 'Email changed successfully. Please log in with your new email.',
+        enterOTP: "Enter OTP",
+        otpSentTo: "OTP sent to {{email}}",
     },
     landing: {
         brandName: 'Cosmic',
@@ -148,6 +159,8 @@ export default {
         titleRequired: 'Title is required',
         noteTitlePlaceholder: 'Note Title...',
         noContent: 'No content to preview',
+        findPlaceholder: 'Find...',
+        replacePlaceholder: 'Replace...',
 
         // Import
         importConfirmTitle: 'Import from CSV?',
@@ -169,6 +182,8 @@ export default {
         selectFile: 'Select CSV File',
         stopImportConfirm: 'Stop Import?',
         stopImportDesc: 'Are you sure you want to stop the import? {{count}} secrets have been imported so far.',
+        importCSV: 'Import CSV',
+        empty: "Vault Empty"
     },
     generators: {
         title: 'Generators',
@@ -236,6 +251,18 @@ export default {
             sandstorm: 'Sandstorm',
             lavender: 'Lavender',
         },
+        advanced: 'Advanced',
+        general: 'General',
+        dataManagement: 'Data Management',
+        exportData: 'Export Data',
+        exportDataDesc: 'Download a copy of your vault',
+        dangerZone: 'Danger Zone',
+        exportFormat: 'Select Export Format',
+        exportFormatJSON: 'JSON (Encrypted Backup - Recommended)',
+        exportFormatCSV: 'CSV (Readable - Not Secure)',
+        exportWarning: 'Warning: CSV files are not encrypted. Anyone with access to the file can read your passwords.',
+        deleteAccountWarning: 'This will permanently delete your account and all data. This action cannot be undone.',
+        exportSuccess: "Export Successful! Make sure to keep your export file secure."
     },
     errors: {
         invalidCredentials: 'Invalid email or password',
@@ -254,6 +281,7 @@ export default {
         loginFailed: 'Login failed. Please try again.',
         registrationFailed: 'Registration failed. Please try again.',
         default: 'Something went wrong. Please try again.',
+        invalidEmail: 'Invalid email address',
     },
     markdown: {
         headingPlaceholder: '# Heading ',

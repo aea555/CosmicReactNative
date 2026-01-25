@@ -26,6 +26,9 @@ export default {
         ok: 'Tamam',
         error: 'Hata',
         success: 'Başarılı',
+        saving: 'Kaydediliyor...',
+        next: "Devam",
+        verify: "Doğrula"
     },
     auth: {
         signIn: 'Giriş Yap',
@@ -69,6 +72,14 @@ export default {
         networkError: 'Ağ hatası. Lütfen tekrar deneyin.',
         emailRequired: 'E-posta Gerekli',
         emailRequiredDesc: 'Doğrulama göndermek için lütfen e-postanızı girin.',
+        changeEmail: 'E-posta Değiştir',
+        changeEmailDesc: 'Hesap e-posta adresinizi güncelleyin',
+        deleteAccount: 'Hesabı Sil',
+        deleteAccountDesc: 'Hesabınızı ve verilerinizi kalıcı olarak kaldırın',
+        newEmail: 'Yeni E-posta',
+        emailChanged: 'E-posta başarıyla değiştirildi. Lütfen yeni e-postanızla giriş yapın.',
+        enterOTP: "OTP girin",
+        otpSentTo: "OTP mail adresinize gönderildi.",
     },
     landing: {
         brandName: 'Cosmic',
@@ -169,6 +180,10 @@ export default {
         titleRequired: 'Başlık gereklidir',
         noteTitlePlaceholder: 'Not Başlığı...',
         noContent: 'Önizlenecek içerik yok',
+        findPlaceholder: 'Bul...',
+        replacePlaceholder: 'Değiştir...',
+        importCSV: "CSV'yi içeri aktar",
+        empty: "Kasa Boş"
     },
     generators: {
         title: 'Üreticiler',
@@ -236,6 +251,18 @@ export default {
             sandstorm: 'Kum Fırtınası',
             lavender: 'Lavanta',
         },
+        advanced: 'Gelişmiş',
+        general: 'Genel',
+        dataManagement: 'Veri Yönetimi',
+        exportData: 'Verileri Dışa Aktar',
+        exportDataDesc: 'Kasanızın bir kopyasını indirin',
+        dangerZone: 'Tehlikeli Bölge',
+        exportFormat: 'Dışa Aktarma Formatını Seçin',
+        exportFormatJSON: 'JSON (Şifreli Yedek - Önerilen)',
+        exportFormatCSV: 'CSV (Okunabilir - Güvenli Değil)',
+        exportWarning: 'Uyarı: CSV dosyaları şifrelenmez. Dosyaya erişimi olan herkes şifrelerinizi okuyabilir.',
+        deleteAccountWarning: 'Bu işlem hesabınızı ve tüm verilerinizi kalıcı olarak silecektir. Geri alınamaz. Bu işlemi gerçekleştirmek istediğinizden emin misiniz?',
+        exportSuccess: "Dışa Aktarma başarılı! Dışa aktarılmış dosyanızın güvenli bir şekilde saklandığından emin olun."
     },
     errors: {
         invalidCredentials: 'Geçersiz e-posta veya şifre',
@@ -254,6 +281,7 @@ export default {
         loginFailed: 'Giriş başarısız. Lütfen tekrar deneyin.',
         registrationFailed: 'Kayıt başarısız. Lütfen tekrar deneyin.',
         default: 'Bir şeyler yanlış gitti. Lütfen tekrar deneyin.',
+        invalidEmail: 'Geçersiz e-posta adresi',
     },
     markdown: {
         headingPlaceholder: '# Başlık ',

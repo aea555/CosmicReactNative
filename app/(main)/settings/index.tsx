@@ -4,12 +4,14 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { checkAutofillEnabled, requestAutofillSettings } from '@/services/autofillSync';
 import { Ionicons } from '@expo/vector-icons';
 import * as Application from 'expo-application';
+import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function SettingsPage() {
     const { t, i18n } = useTranslation();
+    const router = useRouter();
     const { theme, setThemeMode, setSubTheme, availableSubThemes } = useTheme();
     const { logout, refreshTokens, setIsRefreshing, clearMasterPassword } = useAuth();
     const [isAutofillEnabled, setIsAutofillEnabled] = useState(false);
@@ -208,6 +210,25 @@ export default function SettingsPage() {
                                 {t('settings.errorState')}
                             </Text>
                         </View>
+                    </View>
+                </View>
+
+                {/* Advanced */}
+                <View style={styles.section}>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('settings.general')}</Text>
+                    <View style={[styles.sectionCard, { backgroundColor: theme.colors.surface }]}>
+                        <TouchableOpacity
+                            style={styles.menuItem}
+                            onPress={() => router.push('/(main)/settings/advanced')}
+                        >
+                            <View style={[styles.iconBox, { backgroundColor: theme.colors.accent + '20' }]}>
+                                <Ionicons name="settings-outline" size={20} color={theme.colors.accent} />
+                            </View>
+                            <Text style={[styles.menuItemText, { color: theme.colors.text }]}>
+                                {t('settings.advanced')}
+                            </Text>
+                            <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
+                        </TouchableOpacity>
                     </View>
                 </View>
 
@@ -418,6 +439,29 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         fontSize: 14,
         fontFamily: 'Comfortaa_600SemiBold',
+    },
+    // Menu Item Styles
+    sectionCard: {
+        borderRadius: 14,
+        overflow: 'hidden',
+    },
+    iconBox: {
+        width: 32,
+        height: 32,
+        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    menuItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+        gap: 12,
+    },
+    menuItemText: {
+        flex: 1,
+        fontSize: 15,
+        fontFamily: 'Comfortaa_500Medium',
     },
     footer: {
         alignItems: 'center',

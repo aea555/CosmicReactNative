@@ -45,3 +45,5 @@ app-example
 .env
 local.properties.*
 .vscode/
+FRONTEND_SPECS.md
+cosmic-api-*.json

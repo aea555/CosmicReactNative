@@ -3,7 +3,7 @@ import { Modal } from '@/components/ui/Modal';
 import { getDomainColor } from '@/constants/themes';
 import { useTheme } from '@/contexts/ThemeContext';
 import { api, Note, Secret } from '@/services/api';
-import { useFavoritesStore } from '@/stores/favorites';
+
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
@@ -20,7 +20,7 @@ import {
 import Markdown from 'react-native-markdown-display';
 
 export default function VaultDetailPage() {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
     const { theme } = useTheme();
     const queryClient = useQueryClient();
     const router = useRouter();
@@ -29,13 +29,7 @@ export default function VaultDetailPage() {
     const [deleteModalVisible, setDeleteModalVisible] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
 
-    const toggleSecretFavorite = useFavoritesStore((state) => state.toggleSecretFavorite);
-    const toggleNoteFavorite = useFavoritesStore((state) => state.toggleNoteFavorite);
-    const isFavorited = useFavoritesStore((state) =>
-        type === 'secret'
-            ? state.favoriteSecretIds.has(id || '')
-            : state.favoriteNoteIds.has(id || '')
-    );
+    const [isFavoriteActionLoading, setIsFavoriteActionLoading] = useState(false);
 
     // Combined query to fetch either secret or note
     const { data: item, isLoading, error } = useQuery({
@@ -46,6 +40,9 @@ export default function VaultDetailPage() {
         },
         enabled: !!id,
     });
+
+    // Derived state from item data
+    const isFavorited = item?.is_favorite ?? false;
 
     const handleDelete = async () => {
         if (!id) return;
@@ -63,16 +60,31 @@ export default function VaultDetailPage() {
         }
     };
 
-    const handleToggleFavorite = () => {
+    const handleToggleFavorite = async () => {
         if (!id) return;
-        if (type === 'secret') {
-            toggleSecretFavorite(id);
-        } else {
-            toggleNoteFavorite(id);
+        setIsFavoriteActionLoading(true);
+        try {
+            if (isFavorited) {
+                if (type === 'secret') {
+                    await api.unfavoriteSecret(id);
+                } else {
+                    await api.unfavoriteNote(id);
+                }
+            } else {
+                if (type === 'secret') {
+                    await api.favoriteSecret(id);
+                } else {
+                    await api.favoriteNote(id);
+                }
+            }
+            // Invalidate queries to refresh data
+            queryClient.invalidateQueries({ queryKey: [type, id] });
+            queryClient.invalidateQueries({ queryKey: [type === 'secret' ? 'secrets' : 'notes'] });
+        } catch (error) {
+            console.error('Favorite toggle failed:', error);
+        } finally {
+            setIsFavoriteActionLoading(false);
         }
-        // Force re-render/update
-        queryClient.invalidateQueries({ queryKey: [type, id] });
-        queryClient.invalidateQueries({ queryKey: [type === 'secret' ? 'secrets' : 'notes'] });
     };
 
     const copyToClipboard = async (text: string) => {
@@ -166,10 +178,10 @@ export default function VaultDetailPage() {
             {/* Timestamps under title */}
             <View style={styles.noteTimestamps}>
                 <Text style={[styles.timestamp, { color: theme.colors.textMuted }]}>
-                    {t('common.created')} {new Date(note.created_at).toLocaleDateString()}
+                    {t('common.created')} {new Date(note.created_at).toLocaleDateString(i18n.language)}
                 </Text>
                 <Text style={[styles.timestamp, { color: theme.colors.textMuted }]}>
-                    {t('common.updated')} {new Date(note.updated_at).toLocaleDateString()}
+                    {t('common.updated')} {new Date(note.updated_at).toLocaleDateString(i18n.language)}
                 </Text>
             </View>
 
@@ -250,7 +262,13 @@ export default function VaultDetailPage() {
                 <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
                     {type === 'secret' ? t('vault.secret') : t('vault.note')}
                 </Text>
-                <View style={{ width: 44 }} />
+                {type === 'note' && item ? (
+                    <TouchableOpacity onPress={() => copyToClipboard((item as Note).content || '')} style={{ width: 44, alignItems: 'flex-end', justifyContent: 'center' }}>
+                        <Ionicons name="copy-outline" size={22} color={theme.colors.text} />
+                    </TouchableOpacity>
+                ) : (
+                    <View style={{ width: 44 }} />
+                )}
             </View>
 
             {/* Main Content */}
@@ -267,10 +285,10 @@ export default function VaultDetailPage() {
                 {type === 'secret' && (
                     <View style={styles.timestamps}>
                         <Text style={[styles.timestamp, { color: theme.colors.textMuted }]}>
-                            {t('common.created')} {new Date(item.created_at).toLocaleDateString()}
+                            {t('common.created')} {new Date(item.created_at).toLocaleDateString(i18n.language)}
                         </Text>
                         <Text style={[styles.timestamp, { color: theme.colors.textMuted }]}>
-                            {t('common.updated')} {new Date(item.updated_at).toLocaleDateString()}
+                            {t('common.updated')} {new Date(item.updated_at).toLocaleDateString(i18n.language)}
                         </Text>
                     </View>
                 )}

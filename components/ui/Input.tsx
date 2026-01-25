@@ -24,6 +24,7 @@ interface InputProps extends Omit<TextInputProps, 'style'> {
     rightIcon?: keyof typeof Ionicons.glyphMap;
     onRightIconPress?: () => void;
     containerStyle?: ViewStyle;
+    inputStyle?: any; // Allow custom input styles
     isPassword?: boolean;
 }
 
@@ -35,6 +36,7 @@ export function Input({
     rightIcon,
     onRightIconPress,
     containerStyle,
+    inputStyle,
     isPassword = false,
     ...props
 }: InputProps) {
@@ -116,6 +118,7 @@ export function Input({
                             color: theme.colors.text,
                             fontFamily: 'Comfortaa_400Regular',
                         },
+                        inputStyle,
                     ]}
                     placeholderTextColor={theme.colors.textMuted}
                     onFocus={handleFocus}

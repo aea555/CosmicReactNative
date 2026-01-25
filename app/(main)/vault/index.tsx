@@ -7,7 +7,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useAutoProcessPendingSaves } from '@/hooks/useAutofillPendingSaves';
 import { Note, Secret, api } from '@/services/api';
 import { syncVaultToAutofill } from '@/services/autofillSync';
-import { useFavoritesStore } from '@/stores/favorites';
+
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as DocumentPicker from 'expo-document-picker';
@@ -24,7 +24,7 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 
 
@@ -70,8 +70,7 @@ function VaultContent() {
     const [feedbackModal, setFeedbackModal] = useState<{ visible: boolean; title: string; message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
     // Get favorites store
-    const favoriteSecretIds = useFavoritesStore((state) => state.favoriteSecretIds);
-    const favoriteNoteIds = useFavoritesStore((state) => state.favoriteNoteIds);
+
 
 
     // Modal states
@@ -285,8 +284,8 @@ function VaultContent() {
         const visibleNotes = showNotes ? filteredNotes : [];
 
         if (showFavoritesOnly) {
-            setSelectedSecrets(new Set(visibleSecrets.filter(s => favoriteSecretIds.has(s.id)).map(s => s.id)));
-            setSelectedNotes(new Set(visibleNotes.filter(n => favoriteNoteIds.has(n.id)).map(n => n.id)));
+            setSelectedSecrets(new Set(visibleSecrets.filter(s => s.is_favorite).map(s => s.id)));
+            setSelectedNotes(new Set(visibleNotes.filter(n => n.is_favorite).map(n => n.id)));
         } else {
             setSelectedSecrets(new Set(visibleSecrets.map(s => s.id)));
             setSelectedNotes(new Set(visibleNotes.map(n => n.id)));
@@ -300,50 +299,30 @@ function VaultContent() {
         const secretIds = Array.from(selectedSecrets);
         const noteIds = Array.from(selectedNotes);
 
-        const total = secretIds.length + noteIds.length;
-        let successCount = 0;
-        let failCount = 0;
+        const itemsToDelete = [
+            ...secretIds.map(id => ({ id, item_type: 'secret' as const })),
+            ...noteIds.map(id => ({ id, item_type: 'note' as const }))
+        ];
 
         try {
-            const secretPromises = secretIds.map(id => api.deleteSecret(id));
-            const notePromises = noteIds.map(id => api.deleteNote(id));
+            await api.bulkDelete(itemsToDelete);
 
-            const results = await Promise.allSettled([...secretPromises, ...notePromises]);
-
-            results.forEach(result => {
-                if (result.status === 'fulfilled') {
-                    successCount++;
-                } else {
-                    failCount++;
-                }
-            });
-
-            // Invalidate queries ONCE
+            // Invalidate queries
             qc.invalidateQueries({ queryKey: ['secrets'] });
             qc.invalidateQueries({ queryKey: ['notes'] });
 
-            // Show result feedback
-            if (failCount === 0) {
-                setFeedbackModal({
-                    visible: true,
-                    title: t('common.success'),
-                    message: t('vault.bulkDeleteSuccess', { count: successCount }),
-                    type: 'success'
-                });
-            } else {
-                setFeedbackModal({
-                    visible: true,
-                    title: t('common.warning'),
-                    message: t('vault.bulkDeletePartialError', { success: successCount, fail: failCount }),
-                    type: 'info'
-                });
-            }
+            setFeedbackModal({
+                visible: true,
+                title: t('common.success'),
+                message: t('vault.bulkDeleteSuccess', { count: itemsToDelete.length }),
+                type: 'success'
+            });
 
-        } catch (error) {
+        } catch (error: any) {
             setFeedbackModal({
                 visible: true,
                 title: t('common.error'),
-                message: 'Unexpected error during bulk deletion.',
+                message: error.message || t('errors.default'), // Improved error message
                 type: 'error'
             });
         } finally {
@@ -351,6 +330,49 @@ function VaultContent() {
             cancelSelection();
         }
     };
+
+    const handleBulkFavorite = async (isFavorite: boolean) => {
+        setIsBulkDeleting(true); // Re-use loading state or create new one
+
+        const secretIds = Array.from(selectedSecrets);
+        const noteIds = Array.from(selectedNotes);
+
+        const itemsToUpdate = [
+            ...secretIds.map(id => ({ id, item_type: 'secret' as const })),
+            ...noteIds.map(id => ({ id, item_type: 'note' as const }))
+        ];
+
+        try {
+            if (isFavorite) {
+                await api.bulkFavorite(itemsToUpdate);
+            } else {
+                await api.bulkUnfavorite(itemsToUpdate);
+            }
+
+            // Invalidate queries
+            qc.invalidateQueries({ queryKey: ['secrets'] });
+            qc.invalidateQueries({ queryKey: ['notes'] });
+
+            // Allow favorite store to sync automatically via effect in layout or just invalidate
+            // Actually favorite store needs manual update or re-fetch favorites if they are fetched from API
+            // But here favorites are derived from secrets/notes local fav status? 
+            // Wait, useFavoritesStore is client side only? 
+            // IF the API handles favorites, we should refetch.
+            // Assuming API updates the 'is_favorite' field on the items.
+
+        } catch (error: any) {
+            setFeedbackModal({
+                visible: true,
+                title: t('common.error'),
+                message: error.message || t('errors.default'),
+                type: 'error'
+            });
+        } finally {
+            setIsBulkDeleting(false);
+            cancelSelection();
+        }
+    };
+
 
     const handleDelete = () => {
         if (!deleteTarget) return;
@@ -445,18 +467,26 @@ function VaultContent() {
     };
 
     const openCreateModal = (type: ItemType) => {
-        resetForm();
-        setCreateType(type);
-        setCreateModalVisible(true);
         setShowCreateMenu(false);
+        if (type === 'note') {
+            // Navigate to editor for new notes
+            router.push('/(main)/vault/editor');
+        } else {
+            // Use modal for secrets
+            resetForm();
+            setCreateType(type);
+            setCreateModalVisible(true);
+        }
     };
 
     // --- Import Logic ---
 
     const parseCSV = (content: string) => {
-        const lines = content.split(/\r\n|\n/); // Handle both CRLF and LF
-        const headers = lines[0].toLowerCase().split(',').map(h => h.trim());
-        const result = [];
+        // Remove BOM if present
+        const cleanContent = content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content;
+        const lines = cleanContent.split(/\r\n|\n|\r/); // Robust line splitting
+        const headers = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/^"|"$/g, '')); // Remove outer quotes from headers
+        const result: any[] = [];
 
         for (let i = 1; i < lines.length; i++) {
             const line = lines[i];
@@ -492,8 +522,11 @@ function VaultContent() {
                 if (!value) return;
 
                 // Flexible Mapping
+                if (header === 'type') {
+                    entry.type = value.toLowerCase();
+                }
                 // Title/Name
-                if (header === 'name' || header === 'title') {
+                else if (header === 'name' || header === 'title') {
                     entry.title = value;
                 }
                 // URL
@@ -508,79 +541,118 @@ function VaultContent() {
                 else if (header === 'password' || header === 'login_password') {
                     entry.password = value;
                 }
-                // Note (Not strictly used yet but good to capture if future support)
-                else if (header === 'note' || header === 'notes') {
-                    entry.note = value;
+                // Note / Content
+                else if (header === 'note' || header === 'notes' || header === 'content') {
+                    entry.content = value;
+                }
+                else if (header === 'email') {
+                    entry.email = value;
+                }
+                else if (header === 'phone') {
+                    entry.telephone_number = value;
                 }
             });
 
-            if (entry.title && entry.password) {
+            // Determine item type if not specified
+            if (!entry.type) {
+                // If has password or username/email/url -> Secret
+                if (entry.password || entry.username || entry.url || entry.email) {
+                    entry.type = 'secret';
+                } else if (entry.content) {
+                    entry.type = 'note';
+                } else {
+                    entry.type = 'secret'; // Default
+                }
+            }
+
+            // Validation: Title is required. 
+            // We allow empty password for secrets (user might want to fill later).
+            if (entry.title) {
                 result.push(entry);
             }
         }
         return result;
     };
 
-    const isSecretDuplicate = (newSecret: any, existingSecret: Secret) => {
-        // Precise comparison of key fields
-        // Note: CSV fields are strings, API fields might be null/undefined. Treat null/undefined as empty string.
-        const sTitle = existingSecret.title || '';
-        const sUsername = existingSecret.username || '';
-        const sPassword = existingSecret.password || '';
-        const sUrl = existingSecret.url || '';
+    const isDuplicate = (newItem: any, existingItems: Array<Secret | Note>) => {
+        // Check against relevant list based on type
+        // This is a naive check. Improve as needed.
+        if (newItem.type === 'note') {
+            // For notes, check title and content match in existing NOTES
+            return notes.some((n: Note) => n.title === newItem.title && (n.content || '') === (newItem.content || ''));
+        } else {
+            // For secrets
+            return secrets.some((s: Secret) => {
+                const sTitle = s.title || '';
+                const sUsername = s.username || '';
+                const sPassword = s.password || '';
+                const sUrl = s.url || '';
 
-        const nTitle = newSecret.title || '';
-        const nUsername = newSecret.username || '';
-        const nPassword = newSecret.password || '';
-        const nUrl = newSecret.url || '';
+                const nTitle = newItem.title || '';
+                const nUsername = newItem.username || '';
+                const nPassword = newItem.password || '';
+                const nUrl = newItem.url || '';
 
-        return sTitle === nTitle && sUsername === nUsername && sPassword === nPassword && sUrl === nUrl;
+                return sTitle === nTitle && sUsername === nUsername && sPassword === nPassword && sUrl === nUrl;
+            });
+        }
     };
 
     const processImportQueue = async (queue: any[], startIndex: number, skippedCount: number) => {
         setIsImporting(true);
-        setImportProgress(prev => ({ ...prev, total: queue.length, current: startIndex, skipped: skippedCount }));
 
-        for (let i = startIndex; i < queue.length; i++) {
-            if (stopImportRequested) {
-                break;
+        const bulkItems = queue.map(item => {
+            if (item.type === 'note') {
+                return {
+                    item_type: 'note' as const,
+                    data: {
+                        title: item.title,
+                        content: item.content || null
+                    }
+                };
+            } else {
+                return {
+                    item_type: 'secret' as const,
+                    data: {
+                        title: item.title,
+                        username: item.username || null,
+                        password: item.password || null,
+                        url: item.url || null,
+                        email: item.email || null,
+                        telephone_number: item.telephone_number || null,
+                        is_favorite: false
+                    }
+                };
             }
-
-            const item = queue[i];
-            setImportProgress(prev => ({ ...prev, current: i + 1 }));
-
-            try {
-                await api.createSecret({
-                    title: item.title,
-                    username: item.username || '',
-                    password: item.password,
-                    url: item.url || '',
-                });
-                setImportProgress(prev => ({ ...prev, successCount: prev.successCount + 1 }));
-            } catch (error: any) {
-                setIsImporting(false);
-                setImportError({
-                    title: item.title,
-                    error: error.message || 'Unknown error',
-                });
-                return; // Stop on error
-            }
-        }
-
-        setIsImporting(false);
-        setImportQueue([]);
-        setImportError(null);
-        // Only invalidate once at the end
-        qc.invalidateQueries({ queryKey: ['secrets'] });
-
-        setFeedbackModal({
-            visible: true,
-            title: t('vault.importSuccess'),
-            message: skippedCount > 0
-                ? t('vault.importSuccessWithSkipped', { count: queue.length, skipped: skippedCount })
-                : t('vault.importSuccessDesc', { count: queue.length }),
-            type: 'success'
         });
+
+        try {
+            await api.bulkCreate({ items: bulkItems });
+
+            setIsImporting(false);
+            setImportQueue([]);
+            setImportError(null);
+            qc.invalidateQueries({ queryKey: ['secrets'] });
+            qc.invalidateQueries({ queryKey: ['notes'] });
+
+            setFeedbackModal({
+                visible: true,
+                title: t('vault.importSuccess'),
+                message: skippedCount > 0
+                    ? t('vault.importSuccessWithSkipped', { count: bulkItems.length, skipped: skippedCount })
+                    : t('vault.importSuccessDesc', { count: bulkItems.length }),
+                type: 'success'
+            });
+
+        } catch (error: any) {
+            setIsImporting(false);
+            setFeedbackModal({
+                visible: true,
+                title: t('common.error'),
+                message: error.message || t('errors.importFailed'),
+                type: 'error'
+            });
+        }
     };
 
     const handleImportFromGoogle = () => {
@@ -594,14 +666,48 @@ function VaultContent() {
 
         try {
             const result = await DocumentPicker.getDocumentAsync({
-                type: ['text/csv', 'text/comma-separated-values', '*/*'],
+                type: ['text/csv', 'text/comma-separated-values', 'application/json', '*/*'],
                 copyToCacheDirectory: true,
             });
 
             if (result.canceled) return;
 
-            const fileContent = await FileSystem.readAsStringAsync(result.assets[0].uri);
-            const parsedItems = parseCSV(fileContent);
+            const fileUri = result.assets[0].uri;
+            const fileName = result.assets[0].name || '';
+            const fileContent = await FileSystem.readAsStringAsync(fileUri);
+
+            let parsedItems: any[] = [];
+
+            // Detect file format by extension or content
+            if (fileName.toLowerCase().endsWith('.json') || fileContent.trim().startsWith('{')) {
+                // JSON format (exported from our app)
+                try {
+                    const jsonData = JSON.parse(fileContent);
+
+                    // Handle our app's export format
+                    if (jsonData.secrets && Array.isArray(jsonData.secrets)) {
+                        parsedItems = jsonData.secrets.map((s: any) => ({
+                            title: s.title,
+                            username: s.username,
+                            password: s.password,
+                            url: s.url,
+                            email: s.email,
+                            telephone_number: s.telephone_number,
+                        }));
+                    }
+
+                    // Also import notes if present (as notes, not secrets)
+                    if (jsonData.notes && Array.isArray(jsonData.notes) && jsonData.notes.length > 0) {
+                        // For now, we only import secrets from JSON
+                        // Notes would need separate handling
+                    }
+                } catch (parseError) {
+                    throw new Error('Invalid JSON file format');
+                }
+            } else {
+                // CSV format
+                parsedItems = parseCSV(fileContent);
+            }
 
             if (parsedItems.length === 0) {
                 setFeedbackModal({
@@ -618,7 +724,7 @@ function VaultContent() {
             let skipped = 0;
 
             parsedItems.forEach(item => {
-                const isDup = secrets.some(existing => isSecretDuplicate(item, existing));
+                const isDup = isDuplicate(item, item.type === 'note' ? notes : secrets);
                 if (isDup) {
                     skipped++;
                 } else {
@@ -685,7 +791,7 @@ function VaultContent() {
 
         if (showSecrets) {
             filteredSecrets.forEach((s) => {
-                const isFav = favoriteSecretIds.has(s.id);
+                const isFav = !!s.is_favorite;
                 // If showFavoritesOnly is on, only include favorites
                 if (!showFavoritesOnly || isFav) {
                     items.push({ item: s, type: 'secret', isFavorite: isFav });
@@ -694,7 +800,7 @@ function VaultContent() {
         }
         if (showNotes) {
             filteredNotes.forEach((n) => {
-                const isFav = favoriteNoteIds.has(n.id);
+                const isFav = !!n.is_favorite;
                 // If showFavoritesOnly is on, only include favorites
                 if (!showFavoritesOnly || isFav) {
                     items.push({ item: n, type: 'note', isFavorite: isFav });
@@ -715,11 +821,60 @@ function VaultContent() {
         });
 
         return items;
-    }, [filteredSecrets, filteredNotes, showSecrets, showNotes, showFavoritesOnly, favoriteSecretIds, favoriteNoteIds]);
+    }, [filteredSecrets, filteredNotes, showSecrets, showNotes, showFavoritesOnly]);
 
-    const handleEditNote = (note: Note) => {
+    // --- Stable Handlers for Item Components ---
+    const handlePressSecret = useCallback((secret: Secret) => {
+        router.push(`/(main)/vault/${secret.id}?type=secret`);
+    }, [router]);
+
+    const handleEditSecret = useCallback((secret: Secret) => {
+        openEditModal('secret', secret);
+    }, []);
+
+    const handleCloneSecret = useCallback((secret: Secret) => {
+        cloneSecretMutation.mutate(secret);
+    }, [cloneSecretMutation]);
+
+    const handleDeleteSecret = useCallback((secret: Secret) => {
+        setDeleteTarget({ type: 'secret', id: secret.id });
+        setDeleteModalVisible(true);
+    }, []);
+
+    const handleSelectSecret = useCallback((id: string) => {
+        toggleItemSelection('secret', id);
+    }, []);
+
+    const handleLongPressSecret = useCallback((id: string) => {
+        toggleSelectionMode({ type: 'secret', id });
+    }, []);
+
+    // Note Handlers
+    const handlePressNote = useCallback((note: Note) => {
+        router.push(`/(main)/vault/${note.id}?type=note`);
+    }, [router]);
+
+    const handleEditNote = useCallback((note: Note) => {
         router.push(`/(main)/vault/editor?id=${note.id}`);
-    };
+    }, [router]);
+
+    const handleCloneNote = useCallback((note: Note) => {
+        cloneNoteMutation.mutate(note);
+    }, [cloneNoteMutation]);
+
+    const handleDeleteNote = useCallback((note: Note) => {
+        setDeleteTarget({ type: 'note', id: note.id });
+        setDeleteModalVisible(true);
+    }, []);
+
+    const handleSelectNote = useCallback((id: string) => {
+        toggleItemSelection('note', id);
+    }, []);
+
+    const handleLongPressNote = useCallback((id: string) => {
+        toggleSelectionMode({ type: 'note', id });
+    }, []);
+
 
     const renderItem = useCallback(
         ({ item }: { item: { item: Secret | Note; type: ItemType; isFavorite: boolean } }) => {
@@ -728,218 +883,232 @@ function VaultContent() {
                 : selectedNotes.has(item.item.id);
 
             if (item.type === 'secret') {
-
                 return (
                     <SecretItem
                         secret={item.item as Secret}
-                        onPress={() => router.push(`/(main)/vault/${item.item.id}?type=secret`)}
-                        onEdit={() => openEditModal('secret', item.item)}
-                        onClone={() => cloneSecretMutation.mutate(item.item as Secret)}
-                        onDelete={() => {
-                            setDeleteTarget({ type: 'secret', id: item.item.id });
-                            setDeleteModalVisible(true);
-                        }}
+                        onPress={handlePressSecret}
+                        onEdit={handleEditSecret}
+                        onClone={handleCloneSecret}
+                        onDelete={handleDeleteSecret}
                         // Selection Props
                         selectionMode={selectionMode}
                         isSelected={isSelected}
-                        onSelect={() => toggleItemSelection('secret', item.item.id)}
-                        onLongPress={() => !selectionMode && toggleSelectionMode({ type: 'secret', id: item.item.id })}
+                        onSelect={handleSelectSecret}
+                        onLongPress={handleLongPressSecret}
                     />
                 );
             }
             return (
                 <NoteItem
                     note={item.item as Note}
-                    onPress={() => router.push(`/(main)/vault/${item.item.id}?type=note`)}
-                    onEdit={() => handleEditNote(item.item as Note)}
-                    onClone={() => cloneNoteMutation.mutate(item.item as Note)}
-                    onDelete={() => {
-                        setDeleteTarget({ type: 'note', id: item.item.id });
-                        setDeleteModalVisible(true);
-                    }}
+                    onPress={handlePressNote}
+                    onEdit={handleEditNote}
+                    onClone={handleCloneNote}
+                    onDelete={handleDeleteNote}
                     // Selection Props
                     selectionMode={selectionMode}
                     isSelected={isSelected}
-                    onSelect={() => toggleItemSelection('note', item.item.id)}
-                    onLongPress={() => !selectionMode && toggleSelectionMode({ type: 'note', id: item.item.id })}
+                    onSelect={handleSelectNote}
+                    onLongPress={handleLongPressNote}
                 />
             );
         },
-        [router, cloneSecretMutation, cloneNoteMutation, selectionMode, selectedSecrets, selectedNotes]
+        [
+            selectionMode,
+            selectedSecrets,
+            selectedNotes,
+            handlePressSecret, handleEditSecret, handleCloneSecret, handleDeleteSecret, handleSelectSecret, handleLongPressSecret,
+            handlePressNote, handleEditNote, handleCloneNote, handleDeleteNote, handleSelectNote, handleLongPressNote
+        ]
     );
 
     return (
         <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
             {/* Header */}
             <View style={[styles.header, { backgroundColor: theme.colors.bg }]}>
-                <Text style={[styles.headerTitle, { color: theme.colors.text }]}>{t('vault.title')}</Text>
+                <View style={styles.headerTop}>
+                    <Text style={[styles.headerTitle, { color: theme.colors.text }]}>{t('vault.title')}</Text>
 
-                {/* Search & Create */}
-                <View style={styles.headerActions}>
-                    <View style={[styles.searchContainer, { backgroundColor: theme.colors.surface }]}>
-                        <Ionicons name="search" size={18} color={theme.colors.textMuted} />
-                        <TextInput
-                            style={[styles.searchInput, { color: theme.colors.text }]}
-                            placeholder={t('common.search')}
-                            placeholderTextColor={theme.colors.textMuted}
-                            value={searchQuery}
-                            onChangeText={setSearchQuery}
-                        />
-                    </View>
+                    {/* Selection Toolbar (Header Action Replacement) */}
+                    {selectionMode && (
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                            {/* Logic to show Fav/Unfav based on selection state */}
+                            {(() => {
+                                // Calculate if all selected are fav or not
+                                const selectedItems = combinedItems.filter(item =>
+                                    item.type === 'secret' ? selectedSecrets.has(item.item.id) : selectedNotes.has(item.item.id)
+                                );
 
-                    <View>
-                        <TouchableOpacity
-                            style={[styles.createButton, { backgroundColor: theme.colors.accent }]}
-                            onPress={() => setShowCreateMenu(!showCreateMenu)}
-                        >
-                            <Ionicons name="add" size={22} color="#fff" />
-                        </TouchableOpacity>
+                                if (selectedItems.length === 0) return null;
 
-                        {showCreateMenu && (
-                            <View style={[styles.createMenu, { backgroundColor: theme.colors.surfaceElevated }]}>
-                                <TouchableOpacity style={styles.createMenuItem} onPress={() => openCreateModal('secret')}>
-                                    <Ionicons name="lock-closed-outline" size={18} color={theme.colors.text} />
-                                    <Text style={[styles.createMenuText, { color: theme.colors.text }]}>{t('vault.newSecret')}</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={styles.createMenuItem}
-                                    onPress={() => {
-                                        router.push('/(main)/vault/editor');
-                                        setShowCreateMenu(false);
-                                    }}
-                                >
-                                    <Ionicons name="document-text-outline" size={18} color={theme.colors.text} />
-                                    <Text style={[styles.createMenuText, { color: theme.colors.text }]}>{t('vault.newNote')}</Text>
-                                </TouchableOpacity>
-                                <View style={[styles.menuDivider, { backgroundColor: theme.colors.border }]} />
-                                <TouchableOpacity
-                                    style={styles.createMenuItem}
-                                    onPress={handleImportFromGoogle}
-                                >
-                                    <Ionicons name="cloud-download-outline" size={18} color={theme.colors.text} />
-                                    <Text style={[styles.createMenuText, { color: theme.colors.text }]}>{t('vault.importFromCSV')}</Text>
-                                </TouchableOpacity>
-                            </View>
-                        )}
+                                const allFav = selectedItems.every(i => i.isFavorite);
+                                const allNonFav = selectedItems.every(i => !i.isFavorite);
 
-                    </View>
+                                if (allFav) {
+                                    return (
+                                        <TouchableOpacity onPress={() => handleBulkFavorite(false)} style={styles.headerIconButton}>
+                                            <Ionicons name="star-outline" size={22} color={theme.colors.text} />
+                                        </TouchableOpacity>
+                                    );
+                                } else if (allNonFav) {
+                                    return (
+                                        <TouchableOpacity onPress={() => handleBulkFavorite(true)} style={styles.headerIconButton}>
+                                            <Ionicons name="star" size={22} color={theme.colors.accent} />
+                                        </TouchableOpacity>
+                                    );
+                                }
+                                return null; // Mixed state
+                            })()}
+
+                            <TouchableOpacity onPress={selectAll} style={styles.headerIconButton}>
+                                <Ionicons name="checkmark-done-outline" size={22} color={theme.colors.text} />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setBulkDeleteConfirmVisible(true)} style={styles.headerIconButton}>
+                                <Ionicons name="trash-outline" size={22} color={theme.colors.error} />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={cancelSelection} style={styles.headerIconButton}>
+                                <Ionicons name="close" size={22} color={theme.colors.text} />
+                            </TouchableOpacity>
+                        </View>
+                    )}
                 </View>
-            </View>
 
-            {/* Filter buttons */}
-            <View style={styles.filterRow}>
-                {/* <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>{t('vault.include')}</Text> */}
-                <TouchableOpacity
-                    style={[
-                        styles.filterButton,
-                        {
-                            backgroundColor: showSecrets ? theme.colors.accent : theme.colors.surface,
-                            borderColor: showSecrets ? theme.colors.accent : theme.colors.border,
-                        },
-                    ]}
-                    onPress={() => setShowSecrets(!showSecrets)}
-                >
-                    <Ionicons name="shield-outline" size={16} color={showSecrets ? '#fff' : theme.colors.textMuted} />
-                    <Text style={[styles.filterButtonText, { color: showSecrets ? '#fff' : theme.colors.textMuted }]}>
-                        {t('vault.secrets')}
-                    </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[
-                        styles.filterButton,
-                        {
-                            backgroundColor: showNotes ? theme.colors.accent : theme.colors.surface,
-                            borderColor: showNotes ? theme.colors.accent : theme.colors.border,
-                        },
-                    ]}
-                    onPress={() => setShowNotes(!showNotes)}
-                >
-                    <Ionicons name="document-text-outline" size={16} color={showNotes ? '#fff' : theme.colors.textMuted} />
-                    <Text style={[styles.filterButtonText, { color: showNotes ? '#fff' : theme.colors.textMuted }]}>
-                        {t('vault.notes')}
-                    </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[
-                        styles.filterButton,
-                        {
-                            backgroundColor: showFavoritesOnly ? theme.colors.warning : theme.colors.surface,
-                            borderColor: showFavoritesOnly ? theme.colors.warning : theme.colors.border,
-                        },
-                    ]}
-                    onPress={() => setShowFavoritesOnly(!showFavoritesOnly)}
-                >
-                    <Ionicons name={showFavoritesOnly ? "star" : "star-outline"} size={16} color={showFavoritesOnly ? '#fff' : theme.colors.textMuted} />
-                    <Text style={[styles.filterButtonText, { color: showFavoritesOnly ? '#fff' : theme.colors.textMuted }]}>
-                        {t('vault.favorites')}
-                    </Text>
-                </TouchableOpacity>
+                {/* Search Bar Row - Only show when not in selection mode */}
+                {!selectionMode && (
+                    <View style={styles.searchRow}>
+                        <View style={[styles.searchContainer, { backgroundColor: theme.colors.surface }]}>
+                            <Ionicons name="search" size={18} color={theme.colors.textMuted} />
+                            <TextInput
+                                style={[styles.searchInput, { color: theme.colors.text }]}
+                                placeholder={t('common.search')}
+                                placeholderTextColor={theme.colors.textMuted}
+                                value={searchQuery}
+                                onChangeText={setSearchQuery}
+                            />
+                        </View>
+
+                        <View>
+                            <TouchableOpacity
+                                style={[styles.createButton, { backgroundColor: theme.colors.accent }]}
+                                onPress={() => setShowCreateMenu(!showCreateMenu)}
+                            >
+                                <Ionicons name="add" size={22} color="#fff" />
+                            </TouchableOpacity>
+
+                            {showCreateMenu && (
+                                <View style={[styles.createMenu, { backgroundColor: theme.colors.surfaceElevated }]}>
+                                    <TouchableOpacity style={styles.createMenuItem} onPress={() => openCreateModal('secret')}>
+                                        <Ionicons name="key-outline" size={20} color={theme.colors.text} />
+                                        <Text style={[styles.createMenuText, { color: theme.colors.text }]}>{t('vault.newSecret')}</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={styles.createMenuItem} onPress={() => openCreateModal('note')}>
+                                        <Ionicons name="document-text-outline" size={20} color={theme.colors.text} />
+                                        <Text style={[styles.createMenuText, { color: theme.colors.text }]}>{t('vault.newNote')}</Text>
+                                    </TouchableOpacity>
+                                    <View style={[styles.menuDivider, { backgroundColor: theme.colors.border }]} />
+                                    <TouchableOpacity style={styles.createMenuItem} onPress={handleImportFromGoogle}>
+                                        <Ionicons name="cloud-upload-outline" size={20} color={theme.colors.text} />
+                                        <Text style={[styles.createMenuText, { color: theme.colors.text }]}>{t('vault.importCSV')}</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+                        </View>
+                    </View>
+                )}
+
+                {/* Filter buttons - Always visible */}
+                <View style={styles.filterRow}>
+                    <TouchableOpacity
+                        style={[
+                            styles.filterButton,
+                            {
+                                backgroundColor: showSecrets ? theme.colors.accent : theme.colors.surface,
+                                borderColor: showSecrets ? theme.colors.accent : theme.colors.border,
+                            },
+                        ]}
+                        onPress={() => setShowSecrets(!showSecrets)}
+                    >
+                        <Ionicons name="shield-outline" size={16} color={showSecrets ? '#fff' : theme.colors.textMuted} />
+                        <Text style={[styles.filterButtonText, { color: showSecrets ? '#fff' : theme.colors.textMuted }]}>
+                            {t('vault.secrets')}
+                        </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[
+                            styles.filterButton,
+                            {
+                                backgroundColor: showNotes ? theme.colors.accent : theme.colors.surface,
+                                borderColor: showNotes ? theme.colors.accent : theme.colors.border,
+                            },
+                        ]}
+                        onPress={() => setShowNotes(!showNotes)}
+                    >
+                        <Ionicons name="document-text-outline" size={16} color={showNotes ? '#fff' : theme.colors.textMuted} />
+                        <Text style={[styles.filterButtonText, { color: showNotes ? '#fff' : theme.colors.textMuted }]}>
+                            {t('vault.notes')}
+                        </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[
+                            styles.filterButton,
+                            {
+                                backgroundColor: showFavoritesOnly ? theme.colors.warning : theme.colors.surface,
+                                borderColor: showFavoritesOnly ? theme.colors.warning : theme.colors.border,
+                            },
+                        ]}
+                        onPress={() => setShowFavoritesOnly(!showFavoritesOnly)}
+                    >
+                        <Ionicons name={showFavoritesOnly ? "star" : "star-outline"} size={16} color={showFavoritesOnly ? '#fff' : theme.colors.textMuted} />
+                        <Text style={[styles.filterButtonText, { color: showFavoritesOnly ? '#fff' : theme.colors.textMuted }]}>
+                            {t('vault.favorites')}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
             </View>
 
             {/* Search Results Indicator */}
-            {searchQuery.trim() !== '' && !selectionMode && (
-                <View style={styles.searchIndicator}>
-                    <Text style={[styles.searchIndicatorText, { color: theme.colors.textMuted }]}>
-                        {t('vault.searchResults', { query: searchQuery, count: combinedItems.length })}
-                    </Text>
-                </View>
-            )}
-
-            {/* List */}
-            <FlatList
-                data={combinedItems}
-                keyExtractor={(item, index) => `${item.type}-${item.item.id}-${index}`}
-                renderItem={renderItem}
-                contentContainerStyle={styles.list}
-                showsVerticalScrollIndicator={false}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={secretsLoading || notesLoading}
-                        onRefresh={handleRefresh}
-                        tintColor={theme.colors.accent}
-                    />
-                }
-                ListEmptyComponent={
-                    <View style={styles.emptyState}>
-                        <Ionicons name="folder-open-outline" size={48} color={theme.colors.textMuted} />
-                        <Text style={[styles.emptyText, { color: theme.colors.textMuted }]}>
-                            {isLoading ? t('common.loading') : t('vault.noItems')}
+            {
+                searchQuery.trim() !== '' && !selectionMode && (
+                    <View style={styles.searchIndicator}>
+                        <Text style={[styles.searchIndicatorText, { color: theme.colors.textMuted }]}>
+                            {t('vault.searchResults', { query: searchQuery, count: combinedItems.length })}
                         </Text>
                     </View>
-                }
-            />
+                )
+            }
 
-            {/* Selection Bar */}
-            {selectionMode && (
-                <View style={[styles.selectionBar, { backgroundColor: theme.colors.surfaceElevated, borderTopColor: theme.colors.border }]}>
-                    <View style={styles.selectionLeft}>
-                        <TouchableOpacity style={styles.closeSelectionButton} onPress={cancelSelection}>
-                            <Ionicons name="close" size={24} color={theme.colors.text} />
-                        </TouchableOpacity>
-                        <Text style={[styles.selectionCount, { color: theme.colors.text }]}>
-                            {t('vault.selectedCount', { count: selectedSecrets.size + selectedNotes.size })}
-                        </Text>
-                    </View>
-
-                    <View style={styles.selectionActions}>
-                        <TouchableOpacity style={styles.selectionActionButton} onPress={selectAll}>
-                            <Ionicons name="checkmark-done-outline" size={22} color={theme.colors.text} />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.selectionActionButton, { backgroundColor: theme.colors.error + '20' }]}
-                            onPress={() => {
-                                if (selectedSecrets.size + selectedNotes.size > 0) {
-                                    setBulkDeleteConfirmVisible(true);
-                                }
-                            }}
-                        >
-                            <Ionicons name="trash-outline" size={22} color={theme.colors.error} />
-                        </TouchableOpacity>
-                    </View>
+            {/* Content */}
+            {isLoading ? (
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color={theme.colors.accent} />
                 </View>
+            ) : (
+                <FlatList
+                    data={combinedItems}
+                    renderItem={renderItem}
+                    keyExtractor={(item) => `${item.type}-${item.item.id}`}
+                    contentContainerStyle={styles.listContent}
+                    showsVerticalScrollIndicator={false}
+                    refreshControl={<RefreshControl refreshing={isLoading} onRefresh={handleRefresh} tintColor={theme.colors.accent} />}
+                    windowSize={5} // Reduced from 10 to optimize memory/re-renders
+                    initialNumToRender={10} // Reduced from 15
+                    maxToRenderPerBatch={5} // Reduced from 10
+                    removeClippedSubviews={true}
+                    getItemLayout={(data, index) => ({
+                        length: 80, // Approximate height (64 item + 8 margin + padding?) 
+                        offset: 80 * index,
+                        index,
+                    })}
+                    ListEmptyComponent={
+                        <View style={styles.emptyContainer}>
+                            <Ionicons name="file-tray-outline" size={64} color={theme.colors.textMuted} />
+                            <Text style={[styles.emptyText, { color: theme.colors.textMuted }]}>{t('vault.empty')}</Text>
+                        </View>
+                    }
+                />
             )}
 
-            {/* Delete Modal */}
+            {/* Other Modals (Delete, Bulk Delete, Import...) (Keep existing) */}
             <Modal
                 title={t('vault.deleteItem')}
                 visible={deleteModalVisible}
@@ -952,7 +1121,6 @@ function VaultContent() {
                 variant="danger"
             />
 
-            {/* Bulk Delete Confirm Modal */}
             <Modal
                 title={t('vault.bulkDeleteConfirmTitle')}
                 visible={bulkDeleteConfirmVisible}
@@ -966,7 +1134,7 @@ function VaultContent() {
                 loading={isBulkDeleting}
             />
 
-            {/* Import Confirm Modal */}
+            {/* Import Modals ... */}
             <Modal
                 title={t('vault.importConfirmTitle')}
                 visible={showImportConfirm}
@@ -989,13 +1157,12 @@ function VaultContent() {
                         </Text>
                     </View>
 
-                    <Text style={[styles.modalText, { color: theme.colors.textMuted, fontSize: 12, fontStyle: 'italic', marginTop: 4 }]}>
+                    <Text style={[styles.modalText, { color: theme.colors.textMuted, fontSize: 12, fontStyle: 'italic', marginTop: 12, marginBottom: 20 }]}>
                         {t('vault.importConfirmDesc')}
                     </Text>
                 </View>
             </Modal>
 
-            {/* Import Failure Modal */}
             <Modal
                 title={t('vault.importFailedTitle')}
                 visible={!!importError}
@@ -1017,7 +1184,6 @@ function VaultContent() {
                 </View>
             </Modal>
 
-            {/* Feedback Modal */}
             <Modal
                 visible={!!feedbackModal}
                 title={feedbackModal?.title || ''}
@@ -1031,24 +1197,26 @@ function VaultContent() {
             </Modal>
 
             {/* Import Progress Overlay */}
-            {isImporting && (
-                <View style={[styles.overlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
-                    <View style={[styles.syncContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderWidth: 1 }]}>
-                        <ActivityIndicator size="large" color={theme.colors.accent} />
-                        <Text style={[styles.syncText, { color: theme.colors.text }]}>{t('vault.importing')}</Text>
-                        <Text style={[styles.syncSubText, { color: theme.colors.textMuted }]}>
-                            {t('vault.importProgress', { current: importProgress.current, total: importProgress.total })}
-                        </Text>
+            {
+                isImporting && (
+                    <View style={[styles.overlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+                        <View style={[styles.syncContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderWidth: 1 }]}>
+                            <ActivityIndicator size="large" color={theme.colors.accent} />
+                            <Text style={[styles.syncText, { color: theme.colors.text }]}>{t('vault.importing')}</Text>
+                            <Text style={[styles.syncSubText, { color: theme.colors.textMuted }]}>
+                                {t('vault.importProgress', { current: importProgress.current, total: importProgress.total })}
+                            </Text>
 
-                        <TouchableOpacity
-                            style={{ marginTop: 15, padding: 8 }}
-                            onPress={() => setStopImportRequested(true)}
-                        >
-                            <Text style={{ color: theme.colors.error, fontFamily: 'Comfortaa_500Medium' }}>{t('vault.importStop')}</Text>
-                        </TouchableOpacity>
+                            <TouchableOpacity
+                                style={{ marginTop: 15, padding: 8 }}
+                                onPress={() => setStopImportRequested(true)}
+                            >
+                                <Text style={{ color: theme.colors.error, fontFamily: 'Comfortaa_500Medium' }}>{t('vault.importStop')}</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
-                </View>
-            )}
+                )
+            }
 
             {/* Create Modal */}
             <Modal
@@ -1065,43 +1233,56 @@ function VaultContent() {
                         onChangeText={(v) => setFormData({ ...formData, title: v })}
                         placeholder={t('vault.enterTitle')}
                     />
-                    <Input
-                        label={t('vault.url')}
-                        value={formData.url}
-                        onChangeText={(v) => setFormData({ ...formData, url: v })}
-                        placeholder="https://example.com"
-                        keyboardType="url"
-                        autoCapitalize="none"
-                    />
-                    <Input
-                        label={t('auth.email')}
-                        value={formData.email}
-                        onChangeText={(v) => setFormData({ ...formData, email: v })}
-                        placeholder={t('auth.emailPlaceholder')}
-                        keyboardType="email-address"
-                        autoCapitalize="none"
-                    />
-                    <Input
-                        label={t('vault.username')}
-                        value={formData.username}
-                        onChangeText={(v) => setFormData({ ...formData, username: v })}
-                        placeholder={t('vault.username')}
-                        autoCapitalize="none"
-                    />
-                    <Input
-                        label={t('vault.password')}
-                        value={formData.password}
-                        onChangeText={(v) => setFormData({ ...formData, password: v })}
-                        placeholder={t('vault.password')}
-                        isPassword
-                    />
-                    <Input
-                        label={t('vault.phone')}
-                        value={formData.telephone_number}
-                        onChangeText={(v) => setFormData({ ...formData, telephone_number: v })}
-                        placeholder="+1234567890"
-                        keyboardType="phone-pad"
-                    />
+                    {createType === 'secret' ? (
+                        <>
+                            <Input
+                                label={t('vault.url')}
+                                value={formData.url}
+                                onChangeText={(v) => setFormData({ ...formData, url: v })}
+                                placeholder="https://example.com"
+                                keyboardType="url"
+                                autoCapitalize="none"
+                            />
+                            <Input
+                                label={t('auth.email')}
+                                value={formData.email}
+                                onChangeText={(v) => setFormData({ ...formData, email: v })}
+                                placeholder={t('auth.emailPlaceholder')}
+                                keyboardType="email-address"
+                                autoCapitalize="none"
+                            />
+                            <Input
+                                label={t('vault.username')}
+                                value={formData.username}
+                                onChangeText={(v) => setFormData({ ...formData, username: v })}
+                                placeholder={t('vault.username')}
+                                autoCapitalize="none"
+                            />
+                            <Input
+                                label={t('vault.password')}
+                                value={formData.password}
+                                onChangeText={(v) => setFormData({ ...formData, password: v })}
+                                placeholder={t('vault.password')}
+                                isPassword
+                            />
+                            <Input
+                                label={t('vault.phone')}
+                                value={formData.telephone_number}
+                                onChangeText={(v) => setFormData({ ...formData, telephone_number: v })}
+                                placeholder="+1234567890"
+                                keyboardType="phone-pad"
+                            />
+                        </>
+                    ) : (
+                        <Input
+                            label={t('vault.content')}
+                            value={formData.content}
+                            onChangeText={(v) => setFormData({ ...formData, content: v })}
+                            placeholder={t('vault.noteContentPlaceholder')}
+                            multiline
+                            numberOfLines={4}
+                        />
+                    )}
                 </ScrollView>
             </Modal>
 
@@ -1153,7 +1334,7 @@ function VaultContent() {
                     />
                 </ScrollView>
             </Modal>
-        </View>
+        </View >
     );
 }
 
@@ -1168,17 +1349,37 @@ const styles = StyleSheet.create({
     header: {
         paddingTop: 60,
         paddingHorizontal: 20,
-        paddingBottom: 16,
+        paddingBottom: 12,
+    },
+    headerTop: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 12,
     },
     headerTitle: {
         fontSize: 32,
         fontFamily: 'Comfortaa_700Bold',
-        marginBottom: 16,
+    },
+    searchRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        marginBottom: 12,
     },
     headerActions: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
+        gap: 10,
+        flex: 1,
+        justifyContent: 'flex-end',
+    },
+    headerIconButton: {
+        width: 40,
+        height: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 20,
     },
     searchContainer: {
         flex: 1,
@@ -1234,9 +1435,7 @@ const styles = StyleSheet.create({
     },
     filterRow: {
         flexDirection: 'row',
-        paddingHorizontal: 20,
         gap: 10,
-        paddingBottom: 12,
         alignItems: 'center',
     },
     filterLabel: {
@@ -1378,5 +1577,19 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 14,
         fontFamily: 'Comfortaa_500Medium',
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    listContent: {
+        paddingHorizontal: 20,
+        paddingBottom: 100,
+    },
+    emptyContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingTop: 60,
     },
 });

@@ -188,6 +188,20 @@ class ApiService {
         });
     }
 
+    async favoriteSecret(id: string) {
+        return this.request<void>(`/api/v1/secrets/${id}/favorite`, {
+            method: 'PUT',
+            requiresMasterPassword: true,
+        });
+    }
+
+    async unfavoriteSecret(id: string) {
+        return this.request<void>(`/api/v1/secrets/${id}/unfavorite`, {
+            method: 'PUT',
+            requiresMasterPassword: true,
+        });
+    }
+
     // Notes API
     async getNotes() {
         return this.request<Note[]>('/api/v1/notes', {
@@ -223,6 +237,90 @@ class ApiService {
             requiresMasterPassword: true,
         });
     }
+
+    async favoriteNote(id: string) {
+        return this.request<void>(`/api/v1/notes/${id}/favorite`, {
+            method: 'PUT',
+            requiresMasterPassword: true,
+        });
+    }
+
+    async unfavoriteNote(id: string) {
+        return this.request<void>(`/api/v1/notes/${id}/unfavorite`, {
+            method: 'PUT',
+            requiresMasterPassword: true,
+        });
+    }
+
+    // Bulk Operations
+    async bulkCreate(data: { items: Array<{ item_type: 'secret' | 'note', data: any }> }) {
+        return this.request<void>('/api/v1/items/bulk-create', {
+            method: 'POST',
+            body: JSON.stringify(data),
+            requiresMasterPassword: true,
+        });
+    }
+
+    async bulkDelete(items: Array<{ id: string; item_type: 'secret' | 'note' }>) {
+        return this.request<void>('/api/v1/items/bulk-delete', {
+            method: 'DELETE',
+            body: JSON.stringify({ items }),
+            requiresMasterPassword: true,
+        });
+    }
+
+    async bulkFavorite(items: Array<{ id: string; item_type: 'secret' | 'note' }>) {
+        return this.request<void>('/api/v1/items/bulk-favorite', {
+            method: 'PUT',
+            body: JSON.stringify({ items }),
+            requiresMasterPassword: true,
+        });
+    }
+
+    async bulkUnfavorite(items: Array<{ id: string; item_type: 'secret' | 'note' }>) {
+        return this.request<void>('/api/v1/items/bulk-unfavorite', {
+            method: 'PUT',
+            body: JSON.stringify({ items }),
+            requiresMasterPassword: true,
+        });
+    }
+
+    // Account Management
+    async changeEmailRequest(newEmail: string, refreshToken: string) {
+        return this.request<void>('/api/v1/account/change-email-request', {
+            method: 'POST',
+            body: JSON.stringify({ new_email: newEmail, refresh_token: refreshToken }),
+            requiresAuth: true,
+            requiresMasterPassword: true,
+        });
+    }
+
+    async changeEmailConfirm(otp: string, refreshToken: string) {
+        return this.request<void>('/api/v1/account/change-email', {
+            method: 'PUT',
+            body: JSON.stringify({ otp, refresh_token: refreshToken }),
+            requiresAuth: true,
+            requiresMasterPassword: true,
+        });
+    }
+
+    async deleteAccountRequest(refreshToken: string) {
+        return this.request<void>('/api/v1/account/delete-request', {
+            method: 'POST',
+            body: JSON.stringify({ refresh_token: refreshToken }),
+            requiresAuth: true,
+            requiresMasterPassword: true,
+        });
+    }
+
+    async deleteAccountConfirm(otp: string, refreshToken: string) {
+        return this.request<void>('/api/v1/account', {
+            method: 'DELETE',
+            body: JSON.stringify({ otp, refresh_token: refreshToken }),
+            requiresAuth: true,
+            requiresMasterPassword: true,
+        });
+    }
 }
 
 export const api = new ApiService();
@@ -249,6 +347,7 @@ export interface Secret {
     telephone_number?: string;
     created_at: string;
     updated_at: string;
+    is_favorite?: boolean;
 }
 
 export interface CreateSecretRequest {
@@ -266,6 +365,7 @@ export interface Note {
     content?: string;
     created_at: string;
     updated_at: string;
+    is_favorite?: boolean;
 }
 
 export interface CreateNoteRequest {

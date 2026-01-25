@@ -3,6 +3,7 @@ import { api } from '@/services/api';
 import { clearAutofillData } from '@/services/autofillSync';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
+import { jwtDecode } from 'jwt-decode';
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -15,8 +16,16 @@ interface Tokens {
     expiresIn: number;
 }
 
+interface JwtPayload {
+    sub: string;
+    email: string;
+    exp: number;
+    iat: number;
+}
+
 interface AuthContextType {
     authState: AuthState;
+    userEmail: string | null;
     isLoading: boolean;
     masterPassword: string | null;
     login: (email: string, password: string) => Promise<void>;
@@ -26,6 +35,7 @@ interface AuthContextType {
     setMasterPassword: (password: string) => void;
     clearMasterPassword: () => void;
     getAccessToken: () => string | null;
+    getRefreshToken: () => string | null;
     isRefreshing: boolean;
     setIsRefreshing: (value: boolean) => void;
     refreshTokens: () => Promise<string | null>;
@@ -47,6 +57,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const [isLoading, setIsLoading] = useState(true);
     const [accessToken, setAccessToken] = useState<string | null>(null);
     const [refreshToken, setRefreshToken] = useState<string | null>(null);
+    const [userEmail, setUserEmail] = useState<string | null>(null);
     const [masterPassword, setMasterPasswordState] = useState<string | null>(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -81,6 +92,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 if (storedAccessToken && storedRefreshToken) {
                     setAccessToken(storedAccessToken);
                     setRefreshToken(storedRefreshToken);
+                    try {
+                        const decoded: any = jwtDecode(storedAccessToken);
+                        // Start: Check for email in 'email' or 'sub' claims
+                        const email = decoded.email || decoded.sub;
+                        if (email && email.includes('@')) {
+                            setUserEmail(email);
+                        }
+                        // End check
+                    } catch (e) {
+                        console.error('Failed to decode stored token', e);
+                    }
                     // Sync API immediately
                     api.setAccessToken(storedAccessToken);
                     // On restart, we don't have the master password, so we need to unlock
@@ -114,6 +136,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, tokens.refreshToken);
         setAccessToken(tokens.accessToken);
         setRefreshToken(tokens.refreshToken);
+        try {
+            const decoded: any = jwtDecode(tokens.accessToken);
+            // Check for email in 'email' or 'sub' claims
+            const email = decoded.email || decoded.sub;
+            if (email && email.includes('@')) {
+                setUserEmail(email);
+            }
+        } catch (e) {
+            console.error('Failed to decode new token', e);
+        }
         api.setAccessToken(tokens.accessToken);
     };
 
@@ -122,6 +154,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
         setAccessToken(null);
         setRefreshToken(null);
+        setUserEmail(null);
         setMasterPasswordState(null);
         api.setAccessToken(null);
         api.setMasterPassword(null);
@@ -239,6 +272,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     // Update local state
                     setAccessToken(newAccessToken);
                     setRefreshToken(newRefreshToken);
+                    try {
+                        const decoded: any = jwtDecode(newAccessToken);
+                        // Check for email in 'email' or 'sub' claims
+                        const email = decoded.email || decoded.sub;
+                        if (email && email.includes('@')) {
+                            setUserEmail(email);
+                        }
+                    } catch (e) {
+                        console.error('Failed to decode refreshed token', e);
+                    }
 
                     // Update storage
                     await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, newAccessToken);
@@ -297,10 +340,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     const getAccessToken = () => accessToken;
 
+    const getRefreshToken = () => refreshToken;
+
     return (
         <AuthContext.Provider
             value={{
                 authState,
+                userEmail,
                 isLoading,
                 masterPassword,
                 login,
@@ -310,6 +356,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 setMasterPassword,
                 clearMasterPassword,
                 getAccessToken,
+                getRefreshToken,
                 isRefreshing,
                 setIsRefreshing,
                 refreshTokens,
