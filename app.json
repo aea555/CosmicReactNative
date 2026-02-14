@@ -2,7 +2,7 @@
   "expo": {
     "name": "Cosmic Vault",
     "slug": "cosmic-vault",
-    "version": "1.0.0",
+    "version": "1.1.4",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "cosmicvault",
@@ -13,11 +13,10 @@
       "bundleIdentifier": "com.cosmic.vault"
     },
     "android": {
+      "versionCode": 4,
       "adaptiveIcon": {
         "backgroundColor": "#0f172a",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/cosmic_1024.png"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.cosmic.vault",
@@ -42,14 +41,14 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "./plugins/android-autofill",
       "expo-router",
       "expo-secure-store",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
+          "image": "./assets/images/cosmic_transparent_2048.png",
+          "resizeMode": "cover",
           "backgroundColor": "#0f172a",
           "dark": {
             "backgroundColor": "#0f172a"

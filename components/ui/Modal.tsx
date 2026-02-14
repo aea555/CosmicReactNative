@@ -1,12 +1,15 @@
 import { useTheme } from '@/contexts/ThemeContext';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     Dimensions,
+    KeyboardAvoidingView,
+    Platform,
     Modal as RNModal,
     StyleSheet,
     Text,
     TouchableWithoutFeedback,
-    View
+    View,
 } from 'react-native';
 import Animated, {
     useAnimatedStyle,
@@ -29,6 +32,7 @@ interface ModalProps {
     variant?: 'default' | 'danger';
     children?: React.ReactNode;
     showCancel?: boolean;
+    loading?: boolean;
 }
 
 export function Modal({
@@ -36,14 +40,18 @@ export function Modal({
     onClose,
     title,
     message,
-    confirmText = 'Confirm',
-    cancelText = 'Cancel',
+    confirmText,
+    cancelText,
     onConfirm,
     variant = 'default',
     children,
     showCancel = true,
+    loading = false,
 }: ModalProps) {
+    const { t } = useTranslation();
     const { theme } = useTheme();
+    const effectiveConfirmText = confirmText || t('common.confirm');
+    const effectiveCancelText = cancelText || t('common.cancel');
     const scale = useSharedValue(0.9);
     const opacity = useSharedValue(0);
 
@@ -86,7 +94,11 @@ export function Modal({
                 </View>
             </TouchableWithoutFeedback>
 
-            <View style={styles.centeredView} pointerEvents="box-none">
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={styles.centeredView}
+                pointerEvents="box-none"
+            >
                 <TouchableWithoutFeedback>
                     <Animated.View
                         style={[
@@ -126,25 +138,27 @@ export function Modal({
 
                         {children}
 
-                        <View style={styles.buttonContainer}>
-                            {showCancel && (
+                        {(showCancel || confirmText || onConfirm) && (
+                            <View style={styles.buttonContainer}>
+                                {showCancel && (
+                                    <Button
+                                        title={effectiveCancelText}
+                                        onPress={onClose}
+                                        variant="ghost"
+                                        style={styles.button}
+                                    />
+                                )}
                                 <Button
-                                    title={cancelText}
-                                    onPress={onClose}
-                                    variant="ghost"
+                                    title={effectiveConfirmText}
+                                    onPress={onConfirm || onClose}
+                                    variant={variant === 'danger' ? 'danger' : 'primary'}
                                     style={styles.button}
                                 />
-                            )}
-                            <Button
-                                title={confirmText}
-                                onPress={onConfirm || onClose}
-                                variant={variant === 'danger' ? 'danger' : 'primary'}
-                                style={styles.button}
-                            />
-                        </View>
+                            </View>
+                        )}
                     </Animated.View>
                 </TouchableWithoutFeedback>
-            </View>
+            </KeyboardAvoidingView>
         </RNModal>
     );
 }

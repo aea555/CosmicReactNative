@@ -124,7 +124,8 @@ const RIPPLE_SIZE = 100;
 
 const styles = StyleSheet.create({
     container: {
-        flex: 1,
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: '#0f172a',
         justifyContent: 'center',
         alignItems: 'center',
     },

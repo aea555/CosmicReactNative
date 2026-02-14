@@ -1,13 +1,35 @@
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { checkAutofillEnabled, requestAutofillSettings } from '@/services/autofillSync';
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import * as Application from 'expo-application';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function SettingsPage() {
+    const { t, i18n } = useTranslation();
+    const router = useRouter();
     const { theme, setThemeMode, setSubTheme, availableSubThemes } = useTheme();
-    const { logout } = useAuth();
+    const { logout, refreshTokens, setIsRefreshing, clearMasterPassword } = useAuth();
+    const [isAutofillEnabled, setIsAutofillEnabled] = useState(false);
+
+    useEffect(() => {
+        checkAutofillStatus();
+        const interval = setInterval(checkAutofillStatus, 2000); // Check every 2s in case user returns from settings
+        return () => clearInterval(interval);
+    }, []);
+
+    const checkAutofillStatus = async () => {
+        const enabled = await checkAutofillEnabled();
+        setIsAutofillEnabled(enabled);
+    };
+
+    const handleEnableAutofill = () => {
+        requestAutofillSettings();
+    };
 
     const getSubThemeColor = (subTheme: string): string => {
         const colors: Record<string, string> = {
@@ -28,7 +50,7 @@ export default function SettingsPage() {
         <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
             {/* Header */}
             <View style={styles.header}>
-                <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Settings</Text>
+                <Text style={[styles.headerTitle, { color: theme.colors.text }]}>{t('settings.title')}</Text>
             </View>
 
             <ScrollView
@@ -36,9 +58,48 @@ export default function SettingsPage() {
                 contentContainerStyle={styles.contentContainer}
                 showsVerticalScrollIndicator={false}
             >
+                {/* Autofill Service - NEW */}
+                <View style={styles.section}>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('settings.autofill', 'Autofill Service')}</Text>
+
+                    <View style={[styles.autofillCard, { backgroundColor: theme.colors.surface }]}>
+                        <View style={styles.autofillLeft}>
+                            <View style={[styles.autofillIcon, { backgroundColor: theme.colors.accent + '20' }]}>
+                                <Ionicons name="flash-outline" size={20} color={theme.colors.accent} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.autofillTitle, { color: theme.colors.text }]}>
+                                    {t('settings.enableAutofill', 'Android Autofill')}
+                                </Text>
+                                <Text style={[styles.autofillSubtitle, { color: isAutofillEnabled ? theme.colors.success : theme.colors.textMuted }]}>
+                                    {isAutofillEnabled
+                                        ? t('settings.autofillEnabled', 'Active')
+                                        : t('settings.autofillDisabled', 'Tap to enable')}
+                                </Text>
+                            </View>
+                        </View>
+                        <Pressable
+                            onPress={handleEnableAutofill}
+                            style={({ pressed }) => [
+                                styles.autofillButton,
+                                {
+                                    opacity: pressed ? 0.7 : 1,
+                                    backgroundColor: isAutofillEnabled ? theme.colors.success + '20' : theme.colors.accent,
+                                }
+                            ]}
+                        >
+                            <Text style={[styles.buttonText, {
+                                color: isAutofillEnabled ? theme.colors.success : '#fff',
+                            }]}>
+                                {isAutofillEnabled ? t('common.enabled', 'Enabled') : t('common.enable', 'Enable')}
+                            </Text>
+                        </Pressable>
+                    </View>
+                </View>
+
                 {/* Theme Mode */}
                 <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Theme</Text>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('settings.theme')}</Text>
                     <View style={styles.themeToggle}>
                         <TouchableOpacity
                             style={[
@@ -60,7 +121,7 @@ export default function SettingsPage() {
                                     { color: theme.mode === 'dark' ? '#fff' : theme.colors.textMuted },
                                 ]}
                             >
-                                Dark
+                                {t('settings.dark')}
                             </Text>
                         </TouchableOpacity>
 
@@ -84,7 +145,7 @@ export default function SettingsPage() {
                                     { color: theme.mode === 'light' ? '#fff' : theme.colors.textMuted },
                                 ]}
                             >
-                                Light
+                                {t('settings.light')}
                             </Text>
                         </TouchableOpacity>
                     </View>
@@ -92,7 +153,7 @@ export default function SettingsPage() {
 
                 {/* Sub-Theme */}
                 <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Color Scheme</Text>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('settings.colorScheme')}</Text>
                     <View style={styles.subThemeGrid}>
                         {availableSubThemes.map((sub) => (
                             <TouchableOpacity
@@ -117,7 +178,7 @@ export default function SettingsPage() {
                                         },
                                     ]}
                                 >
-                                    {sub.charAt(0).toUpperCase() + sub.slice(1)}
+                                    {t(`settings.themes.${sub}`)}
                                 </Text>
                                 {theme.subTheme === sub && (
                                     <Ionicons name="checkmark-circle" size={18} color={getSubThemeColor(sub)} />
@@ -129,34 +190,53 @@ export default function SettingsPage() {
 
                 {/* Preview */}
                 <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Preview</Text>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('settings.preview')}</Text>
                     <View style={[styles.previewCard, { backgroundColor: theme.colors.surface }]}>
                         <View style={styles.previewRow}>
                             <View style={[styles.previewDot, { backgroundColor: theme.colors.accent }]} />
                             <Text style={[styles.previewText, { color: theme.colors.text }]}>
-                                Accent color
+                                {t('settings.accentColor')}
                             </Text>
                         </View>
                         <View style={styles.previewRow}>
                             <View style={[styles.previewDot, { backgroundColor: theme.colors.success }]} />
                             <Text style={[styles.previewText, { color: theme.colors.textMuted }]}>
-                                Success indicator
+                                {t('settings.successIndicator')}
                             </Text>
                         </View>
                         <View style={styles.previewRow}>
                             <View style={[styles.previewDot, { backgroundColor: theme.colors.error }]} />
                             <Text style={[styles.previewText, { color: theme.colors.textMuted }]}>
-                                Error state
+                                {t('settings.errorState')}
                             </Text>
                         </View>
                     </View>
                 </View>
 
+                {/* Advanced */}
+                <View style={styles.section}>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('settings.general')}</Text>
+                    <View style={[styles.sectionCard, { backgroundColor: theme.colors.surface }]}>
+                        <TouchableOpacity
+                            style={styles.menuItem}
+                            onPress={() => router.push('/(main)/settings/advanced')}
+                        >
+                            <View style={[styles.iconBox, { backgroundColor: theme.colors.accent + '20' }]}>
+                                <Ionicons name="settings-outline" size={20} color={theme.colors.accent} />
+                            </View>
+                            <Text style={[styles.menuItemText, { color: theme.colors.text }]}>
+                                {t('settings.advanced')}
+                            </Text>
+                            <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
                 {/* Account */}
                 <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Account</Text>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('settings.account')}</Text>
                     <Button
-                        title="Sign Out"
+                        title={t('settings.signOut')}
                         onPress={logout}
                         variant="outline"
                         fullWidth
@@ -166,33 +246,58 @@ export default function SettingsPage() {
 
                 {/* About */}
                 <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>About</Text>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('settings.about')}</Text>
                     <View style={[styles.aboutCard, { backgroundColor: theme.colors.surface }]}>
                         <View style={styles.aboutRow}>
-                            <Text style={[styles.aboutLabel, { color: theme.colors.textMuted }]}>Version</Text>
-                            <Text style={[styles.aboutValue, { color: theme.colors.text }]}>1.0.0</Text>
+                            <Text style={[styles.aboutLabel, { color: theme.colors.textMuted }]}>{t('settings.version')}</Text>
+                            <Text style={[styles.aboutValue, { color: theme.colors.text }]}>
+                                {Application.nativeApplicationVersion || '1.0.0'}
+                            </Text>
                         </View>
                         <View style={styles.aboutRow}>
                             <Text style={[styles.aboutLabel, { color: theme.colors.textMuted }]}>
-                                Build
+                                {t('settings.build')}
                             </Text>
                             <Text style={[styles.aboutValue, { color: theme.colors.text }]}>
-                                2026.01.18
+                                {Application.nativeBuildVersion || '1'}
                             </Text>
                         </View>
                     </View>
                 </View>
 
+                {/* Debug */}
+                {/* Do not remove this section */}
+                {/* <View style={styles.section}>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Debug</Text>
+                    <Button
+                        title="Refresh Token"
+                        onPress={async () => {
+                            setIsRefreshing(true);
+                            try {
+                                const success = await refreshTokens();
+                                console.log('Token refresh result:', success);
+                            } finally {
+                                setIsRefreshing(false);
+                            }
+                        }}
+                        variant="outline"
+                        fullWidth
+                        icon={<Ionicons name="refresh-outline" size={18} color={theme.colors.accent} />}
+                    />
+                </View> */}
+
+
                 {/* Footer */}
                 <View style={styles.footer}>
                     <Text style={[styles.footerText, { color: theme.colors.textMuted }]}>
-                        Made with 💜 by Cosmic
+                        {t('settings.madeWith')}
                     </Text>
                 </View>
             </ScrollView>
         </View>
     );
 }
+
 
 const styles = StyleSheet.create({
     container: {
@@ -294,6 +399,68 @@ const styles = StyleSheet.create({
     },
     aboutValue: {
         fontSize: 14,
+        fontFamily: 'Comfortaa_500Medium',
+    },
+    // Autofill Styles
+    autofillCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 16,
+        borderRadius: 14,
+    },
+    autofillLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        gap: 12,
+    },
+    autofillIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    autofillTitle: {
+        fontSize: 16,
+        fontFamily: 'Comfortaa_600SemiBold',
+    },
+    autofillSubtitle: {
+        fontSize: 13,
+        fontFamily: 'Comfortaa_400Regular',
+    },
+    autofillButton: {
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+    },
+    buttonText: {
+        fontWeight: '600',
+        fontSize: 14,
+        fontFamily: 'Comfortaa_600SemiBold',
+    },
+    // Menu Item Styles
+    sectionCard: {
+        borderRadius: 14,
+        overflow: 'hidden',
+    },
+    iconBox: {
+        width: 32,
+        height: 32,
+        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    menuItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+        gap: 12,
+    },
+    menuItemText: {
+        flex: 1,
+        fontSize: 15,
         fontFamily: 'Comfortaa_500Medium',
     },
     footer: {

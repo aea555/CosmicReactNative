@@ -1,10 +1,24 @@
+import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
+import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 
 export default function MainLayout() {
+    const { t } = useTranslation();
     const { theme } = useTheme();
+    const { authState, masterPassword, logout } = useAuth();
+    const router = useRouter();
+
+    useEffect(() => {
+        // If authenticated but no master password (e.g. deep link or restored session),
+        // we must force re-login to get the password for decryption.
+        if (authState === 'AUTHENTICATED' && !masterPassword) {
+            logout();
+        }
+    }, [authState, masterPassword, logout]);
 
     return (
         <Tabs
@@ -14,29 +28,29 @@ export default function MainLayout() {
                     backgroundColor: theme.colors.surface,
                     borderTopColor: theme.colors.border,
                     borderTopWidth: 1,
-                    height: 80,
-                    paddingTop: 12,
-                    paddingBottom: 24,
+                    height: 90, // Increased height
+                    paddingTop: 10,
+                    paddingBottom: 30, // Increased bottom padding to push items up
                 },
                 tabBarActiveTintColor: theme.colors.accent,
                 tabBarInactiveTintColor: theme.colors.textMuted,
                 tabBarLabelStyle: {
                     fontFamily: 'Comfortaa_500Medium',
                     fontSize: 11,
-                    marginTop: 2,
+                    marginTop: 4,
                 },
                 tabBarIconStyle: {
-                    marginBottom: 0,
+                    marginTop: 4,
                 },
             }}
         >
             <Tabs.Screen
-                name="vault/index"
+                name="vault"
                 options={{
-                    title: 'Vault',
+                    title: t('vault.title'),
                     tabBarIcon: ({ color, size, focused }) => (
-                        <View style={focused && [styles.activeIcon, { backgroundColor: theme.colors.accent + '20' }]}>
-                            <Ionicons name={focused ? 'shield' : 'shield-outline'} size={size} color={color} />
+                        <View style={[styles.iconContainer, focused && { backgroundColor: theme.colors.accent + '20' }]}>
+                            <Ionicons name={focused ? 'shield' : 'shield-outline'} size={24} color={color} />
                         </View>
                     ),
                 }}
@@ -44,10 +58,10 @@ export default function MainLayout() {
             <Tabs.Screen
                 name="generators"
                 options={{
-                    title: 'Generators',
+                    title: t('generators.title'),
                     tabBarIcon: ({ color, size, focused }) => (
-                        <View style={focused && [styles.activeIcon, { backgroundColor: theme.colors.accent + '20' }]}>
-                            <Ionicons name={focused ? 'key' : 'key-outline'} size={size} color={color} />
+                        <View style={[styles.iconContainer, focused && { backgroundColor: theme.colors.accent + '20' }]}>
+                            <Ionicons name={focused ? 'key' : 'key-outline'} size={24} color={color} />
                         </View>
                     ),
                 }}
@@ -55,19 +69,12 @@ export default function MainLayout() {
             <Tabs.Screen
                 name="settings"
                 options={{
-                    title: 'Settings',
+                    title: t('settings.title'),
                     tabBarIcon: ({ color, size, focused }) => (
-                        <View style={focused && [styles.activeIcon, { backgroundColor: theme.colors.accent + '20' }]}>
-                            <Ionicons name={focused ? 'settings' : 'settings-outline'} size={size} color={color} />
+                        <View style={[styles.iconContainer, focused && { backgroundColor: theme.colors.accent + '20' }]}>
+                            <Ionicons name={focused ? 'settings' : 'settings-outline'} size={24} color={color} />
                         </View>
                     ),
-                }}
-            />
-            {/* Hidden screens */}
-            <Tabs.Screen
-                name="vault/[id]"
-                options={{
-                    href: null,
                 }}
             />
         </Tabs>
@@ -75,8 +82,12 @@ export default function MainLayout() {
 }
 
 const styles = StyleSheet.create({
-    activeIcon: {
-        padding: 6,
-        borderRadius: 10,
+    iconContainer: {
+        width: 44,
+        height: 32,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
+
 });

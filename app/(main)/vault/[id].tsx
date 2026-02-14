@@ -3,62 +3,56 @@ import { Modal } from '@/components/ui/Modal';
 import { getDomainColor } from '@/constants/themes';
 import { useTheme } from '@/contexts/ThemeContext';
 import { api, Note, Secret } from '@/services/api';
-import { useFavoritesStore } from '@/stores/favorites';
+
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
+import Markdown from 'react-native-markdown-display';
 
 export default function VaultDetailPage() {
+    const { t, i18n } = useTranslation();
     const { theme } = useTheme();
+    const queryClient = useQueryClient();
     const router = useRouter();
     const { id, type } = useLocalSearchParams<{ id: string; type: 'secret' | 'note' }>();
 
-    const [item, setItem] = useState<Secret | Note | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
     const [deleteModalVisible, setDeleteModalVisible] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
 
-    const { isSecretFavorited, isNoteFavorited, toggleSecretFavorite, toggleNoteFavorite } =
-        useFavoritesStore();
+    const [isFavoriteActionLoading, setIsFavoriteActionLoading] = useState(false);
 
-    const isFavorited =
-        type === 'secret' ? isSecretFavorited(id || '') : isNoteFavorited(id || '');
+    // Combined query to fetch either secret or note
+    const { data: item, isLoading, error } = useQuery({
+        queryKey: type === 'secret' ? ['secret', id] : ['note', id],
+        queryFn: () => {
+            if (!id) return null;
+            return type === 'secret' ? api.getSecret(id) : api.getNote(id);
+        },
+        enabled: !!id,
+    });
 
-    useEffect(() => {
-        async function loadItem() {
-            if (!id) return;
-            try {
-                if (type === 'secret') {
-                    const secret = await api.getSecret(id);
-                    setItem(secret);
-                } else {
-                    const note = await api.getNote(id);
-                    setItem(note);
-                }
-            } catch (error) {
-                console.error('Failed to load item:', error);
-            } finally {
-                setIsLoading(false);
-            }
-        }
-        loadItem();
-    }, [id, type]);
+    // Derived state from item data
+    const isFavorited = item?.is_favorite ?? false;
 
     const handleDelete = async () => {
         if (!id) return;
         try {
             if (type === 'secret') {
                 await api.deleteSecret(id);
+                queryClient.invalidateQueries({ queryKey: ['secrets'] });
             } else {
                 await api.deleteNote(id);
+                queryClient.invalidateQueries({ queryKey: ['notes'] });
             }
             router.back();
         } catch (error) {
@@ -66,12 +60,30 @@ export default function VaultDetailPage() {
         }
     };
 
-    const handleToggleFavorite = () => {
+    const handleToggleFavorite = async () => {
         if (!id) return;
-        if (type === 'secret') {
-            toggleSecretFavorite(id);
-        } else {
-            toggleNoteFavorite(id);
+        setIsFavoriteActionLoading(true);
+        try {
+            if (isFavorited) {
+                if (type === 'secret') {
+                    await api.unfavoriteSecret(id);
+                } else {
+                    await api.unfavoriteNote(id);
+                }
+            } else {
+                if (type === 'secret') {
+                    await api.favoriteSecret(id);
+                } else {
+                    await api.favoriteNote(id);
+                }
+            }
+            // Invalidate queries to refresh data
+            queryClient.invalidateQueries({ queryKey: [type, id] });
+            queryClient.invalidateQueries({ queryKey: [type === 'secret' ? 'secrets' : 'notes'] });
+        } catch (error) {
+            console.error('Favorite toggle failed:', error);
+        } finally {
+            setIsFavoriteActionLoading(false);
         }
     };
 
@@ -97,7 +109,7 @@ export default function VaultDetailPage() {
                 <View style={styles.fields}>
                     {secret.url && (
                         <DetailRow
-                            label="URL"
+                            label={t('vault.url')}
                             value={secret.url}
                             icon="globe-outline"
                             onCopy={() => copyToClipboard(secret.url!)}
@@ -106,7 +118,7 @@ export default function VaultDetailPage() {
                     )}
                     {secret.email && (
                         <DetailRow
-                            label="Email"
+                            label={t('auth.email')}
                             value={secret.email}
                             icon="mail-outline"
                             onCopy={() => copyToClipboard(secret.email!)}
@@ -115,7 +127,7 @@ export default function VaultDetailPage() {
                     )}
                     {secret.username && (
                         <DetailRow
-                            label="Username"
+                            label={t('vault.username')}
                             value={secret.username}
                             icon="person-outline"
                             onCopy={() => copyToClipboard(secret.username!)}
@@ -124,7 +136,7 @@ export default function VaultDetailPage() {
                     )}
                     {secret.password && (
                         <DetailRow
-                            label="Password"
+                            label={t('vault.password')}
                             value={showPassword ? secret.password : '••••••••••••'}
                             icon="lock-closed-outline"
                             onCopy={() => copyToClipboard(secret.password!)}
@@ -136,7 +148,7 @@ export default function VaultDetailPage() {
                     )}
                     {secret.telephone_number && (
                         <DetailRow
-                            label="Phone"
+                            label={t('vault.phone')}
                             value={secret.telephone_number}
                             icon="call-outline"
                             onCopy={() => copyToClipboard(secret.telephone_number!)}
@@ -148,32 +160,86 @@ export default function VaultDetailPage() {
         );
     };
 
+
+    // ... (inside component)
+
     const renderNoteDetail = (note: Note) => (
         <>
             <View style={styles.noteHeader}>
                 <Ionicons name="document-text" size={32} color={theme.colors.accent} />
-                <Text style={[styles.title, { color: theme.colors.text }]}>{note.title}</Text>
+                <Text style={[styles.title, { color: theme.colors.text }]} selectable>{note.title}</Text>
                 {isFavorited && (
                     <Text style={[styles.favoriteLabel, { color: theme.colors.warning }]}>
-                        ⭐ Favorited
+                        ⭐ {t('common.favorited')}
                     </Text>
                 )}
             </View>
 
+            {/* Timestamps under title */}
+            <View style={styles.noteTimestamps}>
+                <Text style={[styles.timestamp, { color: theme.colors.textMuted }]}>
+                    {t('common.created')} {new Date(note.created_at).toLocaleDateString(i18n.language)}
+                </Text>
+                <Text style={[styles.timestamp, { color: theme.colors.textMuted }]}>
+                    {t('common.updated')} {new Date(note.updated_at).toLocaleDateString(i18n.language)}
+                </Text>
+            </View>
+
             {note.content && (
-                <View style={[styles.contentBox, { backgroundColor: theme.colors.surface }]}>
-                    <Text style={[styles.contentText, { color: theme.colors.text }]}>
+                <ScrollView
+                    style={[styles.noteContentScroll, { backgroundColor: theme.colors.surface }]}
+                    contentContainerStyle={{ paddingBottom: 20 }}
+                    showsVerticalScrollIndicator={true}
+                    nestedScrollEnabled={true}
+                >
+                    <Markdown
+                        style={{
+                            body: { color: theme.colors.text, fontFamily: 'Comfortaa_400Regular' },
+                            heading1: { color: theme.colors.accent, fontFamily: 'Comfortaa_700Bold' },
+                            heading2: { color: theme.colors.accent, fontFamily: 'Comfortaa_700Bold' },
+                            code_inline: { backgroundColor: theme.colors.surfaceElevated, color: theme.colors.text },
+                            code_block: { backgroundColor: theme.colors.surfaceElevated, color: theme.colors.text },
+                            blockquote: {
+                                backgroundColor: theme.colors.surface,
+                                borderLeftColor: theme.colors.accent,
+                                borderLeftWidth: 4,
+                                paddingHorizontal: 10,
+                                paddingVertical: 5,
+                                color: theme.colors.textMuted,
+                            },
+                        }}
+                        rules={{
+                            textgroup: (node, children) => (
+                                <Text key={node.key} selectable>
+                                    {children}
+                                </Text>
+                            ),
+                        }}
+                        onLinkPress={(url) => {
+                            // Validate URL before opening
+                            if (!url || url === 'url' || !url.startsWith('http')) {
+                                console.warn('Invalid URL:', url);
+                                return false; // Prevent default action
+                            }
+                            return true; // Allow default action for valid URLs
+                        }}
+                    >
                         {note.content}
-                    </Text>
-                </View>
+                    </Markdown>
+
+                </ScrollView>
             )}
+
         </>
     );
+
+
+
 
     if (isLoading) {
         return (
             <View style={[styles.container, styles.centered, { backgroundColor: theme.colors.bg }]}>
-                <Text style={{ color: theme.colors.textMuted }}>Loading...</Text>
+                <Text style={{ color: theme.colors.textMuted }}>{t('common.loading')}</Text>
             </View>
         );
     }
@@ -181,7 +247,7 @@ export default function VaultDetailPage() {
     if (!item) {
         return (
             <View style={[styles.container, styles.centered, { backgroundColor: theme.colors.bg }]}>
-                <Text style={{ color: theme.colors.textMuted }}>Item not found</Text>
+                <Text style={{ color: theme.colors.textMuted }}>{t('vault.itemNotFound')}</Text>
             </View>
         );
     }
@@ -194,40 +260,57 @@ export default function VaultDetailPage() {
                     <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
                 </TouchableOpacity>
                 <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-                    {type === 'secret' ? 'Secret' : 'Note'}
+                    {type === 'secret' ? t('vault.secret') : t('vault.note')}
                 </Text>
-                <View style={{ width: 44 }} />
+                {type === 'note' && item ? (
+                    <TouchableOpacity onPress={() => copyToClipboard((item as Note).content || '')} style={{ width: 44, alignItems: 'flex-end', justifyContent: 'center' }}>
+                        <Ionicons name="copy-outline" size={22} color={theme.colors.text} />
+                    </TouchableOpacity>
+                ) : (
+                    <View style={{ width: 44 }} />
+                )}
             </View>
 
+            {/* Main Content */}
             <ScrollView
                 style={styles.content}
-                contentContainerStyle={styles.contentContainer}
+                contentContainerStyle={[styles.contentContainer, { paddingBottom: 40 }]}
                 showsVerticalScrollIndicator={false}
             >
                 {type === 'secret'
                     ? renderSecretDetail(item as Secret)
                     : renderNoteDetail(item as Note)}
 
-                {/* Timestamps */}
-                <View style={styles.timestamps}>
-                    <Text style={[styles.timestamp, { color: theme.colors.textMuted }]}>
-                        Created: {new Date(item.created_at).toLocaleDateString()}
-                    </Text>
-                    <Text style={[styles.timestamp, { color: theme.colors.textMuted }]}>
-                        Updated: {new Date(item.updated_at).toLocaleDateString()}
-                    </Text>
-                </View>
+                {/* Timestamps for secrets only (notes have it in renderNoteDetail) */}
+                {type === 'secret' && (
+                    <View style={styles.timestamps}>
+                        <Text style={[styles.timestamp, { color: theme.colors.textMuted }]}>
+                            {t('common.created')} {new Date(item.created_at).toLocaleDateString(i18n.language)}
+                        </Text>
+                        <Text style={[styles.timestamp, { color: theme.colors.textMuted }]}>
+                            {t('common.updated')} {new Date(item.updated_at).toLocaleDateString(i18n.language)}
+                        </Text>
+                    </View>
+                )}
 
-                {/* Actions */}
-                <View style={styles.actions}>
+                {/* Actions - Stacked vertically */}
+                <View style={styles.actionsVertical}>
+                    {type === 'note' && (
+                        <Button
+                            title={t('common.edit')}
+                            onPress={() => router.push(`/(main)/vault/editor?id=${(item as Note).id}`)}
+                            variant="primary"
+                            icon={<Ionicons name="create-outline" size={18} color="#fff" />}
+                        />
+                    )}
                     <Button
-                        title={isFavorited ? 'Unfavorite' : 'Favorite'}
+                        title={isFavorited ? t('common.unfavorite') : t('common.favorite')}
                         onPress={handleToggleFavorite}
                         variant="outline"
                         icon={<Ionicons name={isFavorited ? 'star' : 'star-outline'} size={18} color={theme.colors.accent} />}
                     />
                     <Button
-                        title="Delete"
+                        title={t('common.delete')}
                         onPress={() => setDeleteModalVisible(true)}
                         variant="danger"
                         icon={<Ionicons name="trash-outline" size={18} color="#fff" />}
@@ -238,12 +321,13 @@ export default function VaultDetailPage() {
             <Modal
                 visible={deleteModalVisible}
                 onClose={() => setDeleteModalVisible(false)}
-                title="Delete Item"
-                message="Are you sure you want to delete this item? This action cannot be undone."
-                confirmText="Delete"
+                title={t('vault.deleteItem')}
+                message={t('vault.deleteConfirm')}
+                confirmText={t('common.delete')}
                 onConfirm={handleDelete}
                 variant="danger"
             />
+
         </View>
     );
 }
@@ -368,6 +452,12 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         marginBottom: 20,
     },
+    noteContentScroll: {
+        maxHeight: 600,
+        padding: 20,
+        borderRadius: 16,
+        marginBottom: 20,
+    },
     contentText: {
         fontSize: 15,
         fontFamily: 'Comfortaa_400Regular',
@@ -388,6 +478,23 @@ const styles = StyleSheet.create({
     actions: {
         flexDirection: 'row',
         gap: 12,
+    },
+    actionsVertical: {
+        flexDirection: 'column',
+        gap: 12,
+        marginTop: 20,
+    },
+    noteTimestamps: {
+        flexDirection: 'column',
+        gap: 8,
+        marginBottom: 16,
+    },
+    actionBar: {
+        flexDirection: 'row',
+        padding: 16,
+        paddingBottom: 30,
+        gap: 12,
+        borderTopWidth: 1,
     },
 });
 

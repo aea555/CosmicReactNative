@@ -1,31 +1,31 @@
 import { Button } from '@/components/ui/Button';
-import { Modal } from '@/components/ui/Modal';
-import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Animated, {
     Easing,
     interpolate,
     useAnimatedStyle,
     useSharedValue,
     withRepeat,
-    withTiming
+    withTiming,
 } from 'react-native-reanimated';
 
-const WAITING_TIME = 10 * 60; // 10 minutes in seconds
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 export default function WaitingAreaPage() {
     const { theme } = useTheme();
-    const { verifyEmail, authState } = useAuth();
+    const { t } = useTranslation();
     const router = useRouter();
 
-    const [timeRemaining, setTimeRemaining] = useState(WAITING_TIME);
-    const [isVerifying, setIsVerifying] = useState(false);
-    const [showSuccessModal, setShowSuccessModal] = useState(false);
-    const [redirectCountdown, setRedirectCountdown] = useState(5);
+    // Resend states
+    const [isResending, setIsResending] = useState(false);
+    const [resendCooldown, setResendCooldown] = useState(0);
+    const [resendMessage, setResendMessage] = useState('');
+    const [userEmail, setUserEmail] = useState('');
 
     const ripple = useSharedValue(0);
 
@@ -39,180 +39,179 @@ export default function WaitingAreaPage() {
     }, []);
 
     const rippleStyle = useAnimatedStyle(() => ({
-        transform: [{ scale: interpolate(ripple.value, [0, 1], [1, 3]) }],
-        opacity: interpolate(ripple.value, [0, 0.3, 1], [0.5, 0.3, 0]),
+        transform: [{ scale: interpolate(ripple.value, [0, 1], [1, 2.5]) }],
+        opacity: interpolate(ripple.value, [0, 0.3, 1], [0.4, 0.2, 0]),
     }));
 
-    // Countdown timer
+    // Cooldown timer
     useEffect(() => {
-        const interval = setInterval(() => {
-            setTimeRemaining((prev) => {
-                if (prev <= 1) {
-                    clearInterval(interval);
-                    router.replace('/(auth)/landing');
-                    return 0;
-                }
-                return prev - 1;
-            });
-        }, 1000);
-
-        return () => clearInterval(interval);
-    }, []);
-
-    // Handle deep link verification
-    const handleDeepLink = useCallback(async (url: string) => {
-        try {
-            const urlObj = new URL(url);
-            const token = urlObj.searchParams.get('token');
-
-            if (token && (urlObj.pathname === 'verify-email' || url.includes('verify-email'))) {
-                setIsVerifying(true);
-                await verifyEmail(token);
-                setShowSuccessModal(true);
-            }
-        } catch (error: any) {
-            Alert.alert(
-                'Verification Failed',
-                error.message || 'The verification link is invalid or expired.'
-            );
-        } finally {
-            setIsVerifying(false);
+        if (resendCooldown > 0) {
+            const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+            return () => clearTimeout(timer);
         }
-    }, [verifyEmail]);
+    }, [resendCooldown]);
 
-    // Listen for deep links
-    useEffect(() => {
-        // Handle deep link when app opens
-        Linking.getInitialURL().then((url) => {
-            if (url) handleDeepLink(url);
-        });
+    // Resend verification email
+    const handleResend = async () => {
+        if (resendCooldown > 0 || isResending || !userEmail) {
+            if (!userEmail) {
+                Alert.alert(t('auth.emailRequired'), t('auth.emailRequiredDesc'));
+            }
+            return;
+        }
 
-        // Handle deep link when app is already open
-        const subscription = Linking.addEventListener('url', ({ url }) => {
-            handleDeepLink(url);
-        });
+        setIsResending(true);
+        setResendMessage('');
 
-        return () => subscription.remove();
-    }, [handleDeepLink]);
-
-    // Redirect countdown after success
-    useEffect(() => {
-        if (!showSuccessModal) return;
-
-        const interval = setInterval(() => {
-            setRedirectCountdown((prev) => {
-                if (prev <= 1) {
-                    clearInterval(interval);
-                    router.replace('/(auth)/login');
-                    return 0;
-                }
-                return prev - 1;
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/v1/auth/resend-verification`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: userEmail }),
             });
-        }, 1000);
 
-        return () => clearInterval(interval);
-    }, [showSuccessModal]);
+            const data = await response.json();
 
-    const formatTime = (seconds: number) => {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            if (response.ok) {
+                setResendMessage(t('waitingArea.emailSent'));
+                setResendCooldown(60);
+            } else if (data.code === 'VERIFICATION_PENDING') {
+                const match = data.error?.match(/(\d+) seconds/);
+                const seconds = match ? parseInt(match[1]) : 60;
+                setResendCooldown(seconds);
+                setResendMessage(t('waitingArea.pleaseWait', { seconds }));
+            } else if (data.code === 'EMAIL_ALREADY_VERIFIED') {
+                setResendMessage(t('waitingArea.alreadyVerified'));
+                setTimeout(() => router.replace('/(auth)/login'), 2000);
+            } else {
+                setResendMessage(data.error || t('errors.default'));
+            }
+        } catch (error) {
+            setResendMessage(t('auth.networkError'));
+        } finally {
+            setIsResending(false);
+        }
     };
 
     return (
         <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
-            {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity
-                    style={styles.backButton}
-                    onPress={() => router.replace('/(auth)/landing')}
-                >
-                    <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
-                </TouchableOpacity>
-            </View>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={{ flex: 1 }}
+            >
+                <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+                    {/* Header */}
+                    <View style={styles.header}>
+                        <TouchableOpacity
+                            style={styles.backButton}
+                            onPress={() => router.replace('/(auth)/landing')}
+                        >
+                            <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
+                        </TouchableOpacity>
+                    </View>
 
-            {/* Content */}
-            <View style={styles.content}>
-                <View style={styles.timerSection}>
-                    {/* Ripple effect */}
-                    <View style={styles.timerWrapper}>
-                        <Animated.View
-                            style={[
-                                styles.ripple,
-                                { borderColor: theme.colors.accent },
-                                rippleStyle,
-                            ]}
-                        />
-                        <View style={[styles.timerCircle, { backgroundColor: theme.colors.surface }]}>
-                            <Text style={[styles.timerText, { color: theme.colors.accent }]}>
-                                {formatTime(timeRemaining)}
+                    {/* Content */}
+                    <View style={styles.content}>
+                        {/* Email icon with ripple */}
+                        <View style={styles.iconSection}>
+                            <View style={styles.iconWrapper}>
+                                <Animated.View
+                                    style={[
+                                        styles.ripple,
+                                        { borderColor: theme.colors.accent },
+                                        rippleStyle,
+                                    ]}
+                                />
+                                <View style={[styles.iconCircle, { backgroundColor: theme.colors.surface }]}>
+                                    <Ionicons name="mail-outline" size={40} color={theme.colors.accent} />
+                                </View>
+                            </View>
+                        </View>
+
+                        <Text style={[styles.title, { color: theme.colors.text }]}>
+                            {t('waitingArea.checkEmail')}
+                        </Text>
+                        <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>
+                            {t('waitingArea.verificationSent')}
+                        </Text>
+
+                        {/* Info cards */}
+                        <View style={styles.infoCards}>
+                            <View style={[styles.infoCard, { backgroundColor: theme.colors.surface }]}>
+                                <Ionicons name="time-outline" size={22} color={theme.colors.accent} />
+                                <Text style={[styles.infoText, { color: theme.colors.textMuted }]}>
+                                    {t('waitingArea.linkExpires')}
+                                </Text>
+                            </View>
+
+                            <View style={[styles.infoCard, { backgroundColor: theme.colors.surface }]}>
+                                <Ionicons name="mail-outline" size={22} color={theme.colors.accent} />
+                                <Text style={[styles.infoText, { color: theme.colors.textMuted }]}>
+                                    {t('waitingArea.checkSpam')}
+                                </Text>
+                            </View>
+                        </View>
+
+                        {/* Resend section */}
+                        <View style={[styles.resendSection, { backgroundColor: theme.colors.surface }]}>
+                            <Text style={[styles.resendLabel, { color: theme.colors.textMuted }]}>
+                                {t('waitingArea.didntReceive')}
                             </Text>
+
+                            <View style={styles.resendInputRow}>
+                                <View style={[styles.emailInput, { backgroundColor: theme.colors.bg }]}>
+                                    <Ionicons name="mail-outline" size={18} color={theme.colors.textMuted} />
+                                    <TextInput
+                                        style={[styles.emailInputField, { color: theme.colors.text }]}
+                                        value={userEmail}
+                                        onChangeText={setUserEmail}
+                                        placeholder={t('waitingArea.enterYourEmail')}
+                                        placeholderTextColor={theme.colors.textMuted}
+                                        autoCapitalize="none"
+                                        keyboardType="email-address"
+                                    />
+                                </View>
+                            </View>
+
+                            <TouchableOpacity
+                                style={[
+                                    styles.resendButton,
+                                    {
+                                        backgroundColor: resendCooldown > 0 ? theme.colors.surfaceElevated : theme.colors.accent,
+                                        opacity: resendCooldown > 0 || isResending ? 0.6 : 1,
+                                    },
+                                ]}
+                                onPress={handleResend}
+                                disabled={resendCooldown > 0 || isResending}
+                            >
+                                <Text style={[styles.resendButtonText, { color: resendCooldown > 0 ? theme.colors.textMuted : '#fff' }]}>
+                                    {isResending
+                                        ? t('waitingArea.sending')
+                                        : resendCooldown > 0
+                                            ? t('waitingArea.resendInSeconds', { seconds: resendCooldown })
+                                            : t('waitingArea.resendButton')}
+                                </Text>
+                            </TouchableOpacity>
+
+                            {resendMessage && (
+                                <Text style={[styles.resendMessage, { color: theme.colors.accent }]}>
+                                    {resendMessage}
+                                </Text>
+                            )}
+                        </View>
+
+                        {/* Navigation buttons */}
+                        <View style={styles.actions}>
+                            <Button
+                                title={t('waitingArea.backToLogin')}
+                                onPress={() => router.replace('/(auth)/login')}
+                                variant="outline"
+                                fullWidth
+                            />
                         </View>
                     </View>
-                </View>
-
-                <Text style={[styles.title, { color: theme.colors.text }]}>
-                    Check your email
-                </Text>
-                <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>
-                    We've sent a verification link to your email address. Click the link to verify your account.
-                </Text>
-
-                {/* Info cards */}
-                <View style={styles.infoCards}>
-                    <View style={[styles.infoCard, { backgroundColor: theme.colors.surface }]}>
-                        <Ionicons name="mail-outline" size={22} color={theme.colors.accent} />
-                        <Text style={[styles.infoText, { color: theme.colors.textMuted }]}>
-                            Check your spam folder if you don't see it
-                        </Text>
-                    </View>
-
-                    <View style={[styles.infoCard, { backgroundColor: theme.colors.surface }]}>
-                        <Ionicons name="time-outline" size={22} color={theme.colors.accent} />
-                        <Text style={[styles.infoText, { color: theme.colors.textMuted }]}>
-                            Link expires when the timer runs out
-                        </Text>
-                    </View>
-                </View>
-
-                {/* Navigation buttons */}
-                <View style={styles.actions}>
-                    <Button
-                        title="Back to Login"
-                        onPress={() => router.replace('/(auth)/login')}
-                        variant="outline"
-                        fullWidth
-                    />
-                    <Button
-                        title="Start Over"
-                        onPress={() => router.replace('/(auth)/landing')}
-                        variant="ghost"
-                        fullWidth
-                    />
-                </View>
-            </View>
-
-            {/* Success Modal */}
-            <Modal
-                visible={showSuccessModal}
-                onClose={() => { }}
-                title="Email Verified! 🎉"
-                message={`Your email has been verified successfully. You'll be redirected to the login page in ${redirectCountdown} seconds.`}
-                confirmText={`Continue (${redirectCountdown})`}
-                onConfirm={() => router.replace('/(auth)/login')}
-                showCancel={false}
-            />
-
-            {/* Loading overlay */}
-            {isVerifying && (
-                <View style={[styles.overlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
-                    <View style={[styles.loadingCard, { backgroundColor: theme.colors.surface }]}>
-                        <Text style={[styles.loadingText, { color: theme.colors.text }]}>
-                            Verifying...
-                        </Text>
-                    </View>
-                </View>
-            )}
+                </ScrollView>
+            </KeyboardAvoidingView>
         </View>
     );
 }
@@ -235,29 +234,28 @@ const styles = StyleSheet.create({
         flex: 1,
         paddingHorizontal: 24,
         alignItems: 'center',
-        justifyContent: 'center',
-        marginTop: -60,
+        paddingTop: 40,
     },
-    timerSection: {
-        marginBottom: 32,
+    iconSection: {
+        marginBottom: 24,
     },
-    timerWrapper: {
-        width: 150,
-        height: 150,
+    iconWrapper: {
+        width: 120,
+        height: 120,
         justifyContent: 'center',
         alignItems: 'center',
     },
     ripple: {
         position: 'absolute',
-        width: 120,
-        height: 120,
-        borderRadius: 60,
+        width: 100,
+        height: 100,
+        borderRadius: 50,
         borderWidth: 2,
     },
-    timerCircle: {
-        width: 120,
-        height: 120,
-        borderRadius: 60,
+    iconCircle: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: '#7c3aed',
@@ -265,10 +263,6 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.2,
         shadowRadius: 15,
         elevation: 5,
-    },
-    timerText: {
-        fontSize: 28,
-        fontFamily: 'Comfortaa_700Bold',
     },
     title: {
         fontSize: 24,
@@ -281,13 +275,13 @@ const styles = StyleSheet.create({
         fontFamily: 'Comfortaa_400Regular',
         textAlign: 'center',
         lineHeight: 24,
-        marginBottom: 32,
+        marginBottom: 24,
         paddingHorizontal: 20,
     },
     infoCards: {
         width: '100%',
         gap: 12,
-        marginBottom: 32,
+        marginBottom: 24,
     },
     infoCard: {
         flexDirection: 'row',
@@ -301,21 +295,50 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontFamily: 'Comfortaa_400Regular',
     },
+    resendSection: {
+        width: '100%',
+        padding: 20,
+        borderRadius: 16,
+        marginBottom: 24,
+    },
+    resendLabel: {
+        fontSize: 14,
+        fontFamily: 'Comfortaa_500Medium',
+        marginBottom: 12,
+        textAlign: 'center',
+    },
+    resendInputRow: {
+        marginBottom: 12,
+    },
+    emailInput: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 14,
+        borderRadius: 10,
+        gap: 10,
+    },
+    emailInputField: {
+        flex: 1,
+        fontSize: 14,
+        fontFamily: 'Comfortaa_400Regular',
+    },
+    resendButton: {
+        paddingVertical: 14,
+        borderRadius: 12,
+        alignItems: 'center',
+    },
+    resendButtonText: {
+        fontSize: 14,
+        fontFamily: 'Comfortaa_500Medium',
+    },
+    resendMessage: {
+        fontSize: 13,
+        fontFamily: 'Comfortaa_400Regular',
+        textAlign: 'center',
+        marginTop: 12,
+    },
     actions: {
         width: '100%',
         gap: 12,
-    },
-    overlay: {
-        ...StyleSheet.absoluteFillObject,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    loadingCard: {
-        padding: 24,
-        borderRadius: 16,
-    },
-    loadingText: {
-        fontSize: 16,
-        fontFamily: 'Comfortaa_500Medium',
     },
 });
