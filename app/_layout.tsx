@@ -5,12 +5,13 @@ import {
   useFonts,
 } from '@expo-google-fonts/comfortaa';
 import { ProstoOne_400Regular } from '@expo-google-fonts/prosto-one';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { LogBox, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, LogBox, StyleSheet, Text, View } from 'react-native';
 
 import 'react-native-reanimated';
 import '../global.css';
@@ -21,6 +22,7 @@ import '@/i18n';
 import { SplashAnimation } from '@/components/SplashAnimation';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
+import { applyOtaUpdateOnLaunch } from '@/services/otaUpdates';
 
 // Prevent auto-hide of splash screen
 SplashScreen.preventAutoHideAsync();
@@ -74,7 +76,7 @@ function NavigationGuard({ children }: { children: React.ReactNode }) {
       // Wait a tick for the navigation to process
       setTimeout(() => setHasNavigated(true), 100);
     }
-  }, [authState, segments, isLoading]);
+  }, [authState, isLoading, router, segments]);
 
   // Show splash while loading or until initial navigation is complete
   if (isLoading || !hasNavigated) {
@@ -127,15 +129,13 @@ function RootLayoutNav() {
   );
 }
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ActivityIndicator, Text } from 'react-native';
-
 // Initialize QueryClient
 const queryClient = new QueryClient();
 
 export default function RootLayout() {
   const [showSplash, setShowSplash] = useState(true);
   const [appIsReady, setAppIsReady] = useState(false);
+  const [isOtaReady, setIsOtaReady] = useState(false);
 
   const [fontsLoaded] = useFonts({
     Comfortaa_400Regular,
@@ -145,11 +145,30 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    if (fontsLoaded) {
-      SplashScreen.hideAsync();
-      setAppIsReady(true);
+    let isMounted = true;
+
+    const runOtaCheck = async () => {
+      await applyOtaUpdateOnLaunch();
+      if (isMounted) {
+        setIsOtaReady(true);
+      }
+    };
+
+    runOtaCheck();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!fontsLoaded || !isOtaReady) {
+      return;
     }
-  }, [fontsLoaded]);
+
+    SplashScreen.hideAsync();
+    setAppIsReady(true);
+  }, [fontsLoaded, isOtaReady]);
 
   const handleSplashComplete = () => {
     setShowSplash(false);

@@ -8,7 +8,13 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "ota:channels:list": "npx eas channel:list",
+    "ota:channels:ensure": "node ./scripts/eas-ensure-channels.js",
+    "ota:publish": "node ./scripts/eas-publish-update.js",
+    "ota:publish:development": "npm run ota:publish -- --channel development",
+    "ota:publish:preview": "npm run ota:publish -- --channel preview",
+    "ota:publish:production": "npm run ota:publish -- --channel production"
   },
   "dependencies": {
     "@expo-google-fonts/comfortaa": "^0.4.2",
@@ -41,6 +47,7 @@
     "expo-status-bar": "~3.0.9",
     "expo-symbols": "~1.0.8",
     "expo-system-ui": "~6.0.9",
+    "expo-updates": "~29.0.16",
     "expo-web-browser": "~15.0.10",
     "i18next": "^23.16.8",
     "intl-pluralrules": "^2.0.1",
