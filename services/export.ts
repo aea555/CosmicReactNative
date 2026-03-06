@@ -45,7 +45,45 @@ export const exportService = {
 
             return fileUri;
         }
+    },
+
+    async exportToJSON(secrets: Secret[], notes: Note[]): Promise<string> {
+        const payload = {
+            version: '1.0',
+            exported_at: new Date().toISOString(),
+            secrets,
+            notes,
+        };
+        const jsonContent = JSON.stringify(payload, null, 2);
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const baseName = `cosmic_export_${timestamp}`;
+        const fileName = `${baseName}.json`;
+
+        if (Platform.OS === 'android') {
+            const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+            if (permissions.granted) {
+                const uri = await FileSystem.StorageAccessFramework.createFileAsync(
+                    permissions.directoryUri,
+                    baseName,
+                    'application/json'
+                );
+                await FileSystem.writeAsStringAsync(uri, jsonContent, { encoding: FileSystem.EncodingType.UTF8 });
+                return uri;
+            } else {
+                throw new Error('Permission denied or cancelled');
+            }
+        } else {
+            const fileUri = (FileSystem.documentDirectory || '') + fileName;
+            await FileSystem.writeAsStringAsync(fileUri, jsonContent, { encoding: FileSystem.EncodingType.UTF8 });
+
+            await Sharing.shareAsync(fileUri, {
+                mimeType: 'application/json',
+                dialogTitle: 'Save Vault Export',
+            });
+
+            return fileUri;
+        }
     }
 };
-
 

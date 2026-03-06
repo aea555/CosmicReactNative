@@ -1,6 +1,7 @@
 import { Modal } from '@/components/ui/Modal';
 import { useTheme } from '@/contexts/ThemeContext';
 import { api } from '@/services/api';
+import { usePreferencesStore } from '@/stores/preferences';
 import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -31,6 +32,8 @@ export default function NoteEditorPage() {
     const { t } = useTranslation();
     const router = useRouter();
     const queryClient = useQueryClient();
+    const autoSaveDebounceMs = usePreferencesStore((state) => state.autoSaveDebounceMs);
+    const historyDebounceMs = usePreferencesStore((state) => state.historyDebounceMs);
 
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
@@ -93,7 +96,7 @@ export default function NoteEditorPage() {
         if (instant) {
             performSave();
         } else {
-            historyTimeoutRef.current = setTimeout(performSave, 2000); // Match auto-save debounce
+            historyTimeoutRef.current = setTimeout(performSave, historyDebounceMs);
         }
     };
 
@@ -185,10 +188,10 @@ export default function NoteEditorPage() {
                 setIsSaving(false);
                 setTimeout(() => setShowSavingIndicator(false), 500);
             }
-        }, 2000); // 2s debounce for save
+        }, autoSaveDebounceMs);
 
         return () => clearTimeout(timer);
-    }, [content, title, lastSavedContent, lastSavedTitle, isCreated, noteId]);
+    }, [content, title, lastSavedContent, lastSavedTitle, isCreated, noteId, autoSaveDebounceMs]);
 
     const loadNote = async () => {
         try {
@@ -276,8 +279,17 @@ export default function NoteEditorPage() {
     };
 
     const insertMarkdown = (syntax: string) => {
+        const { start, end } = selectionRef.current;
+        const nextContent = `${content.slice(0, start)}${syntax}${content.slice(end)}`;
+        const nextCursor = start + syntax.length;
+        const nextSelection = { start: nextCursor, end: nextCursor };
+
         saveToHistory(content, true);
-        setContent(prev => prev + syntax);
+        setContent(nextContent);
+        lastHistoryContentRef.current = nextContent;
+        selectionRef.current = nextSelection;
+        setSelection(nextSelection);
+        inputRef.current?.focus();
     };
 
     // Search Logic helpers
@@ -846,4 +858,3 @@ const styles = StyleSheet.create({
         fontFamily: 'Comfortaa_500Medium',
     },
 });
-

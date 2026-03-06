@@ -8,12 +8,14 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function SettingsPage() {
-    const { t, i18n } = useTranslation();
+    const { t } = useTranslation();
     const router = useRouter();
     const { theme, setThemeMode, setSubTheme, availableSubThemes } = useTheme();
-    const { logout, refreshTokens, setIsRefreshing, clearMasterPassword } = useAuth();
+    const { logout } = useAuth();
+    const insets = useSafeAreaInsets();
     const [isAutofillEnabled, setIsAutofillEnabled] = useState(false);
 
     useEffect(() => {
@@ -48,21 +50,25 @@ export default function SettingsPage() {
 
     return (
         <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
-            {/* Header */}
-            <View style={styles.header}>
-                <Text style={[styles.headerTitle, { color: theme.colors.text }]}>{t('settings.title')}</Text>
-            </View>
-
             <ScrollView
                 style={styles.content}
-                contentContainerStyle={styles.contentContainer}
+                contentContainerStyle={[styles.contentContainer, { paddingTop: insets.top + 16 }]}
                 showsVerticalScrollIndicator={false}
             >
                 {/* Autofill Service - NEW */}
                 <View style={styles.section}>
                     <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t('settings.autofill', 'Autofill Service')}</Text>
 
-                    <View style={[styles.autofillCard, { backgroundColor: theme.colors.surface }]}>
+                    <Pressable
+                        onPress={handleEnableAutofill}
+                        style={({ pressed }) => [
+                            styles.autofillCard,
+                            {
+                                backgroundColor: theme.colors.surface,
+                                opacity: pressed ? 0.85 : 1,
+                            }
+                        ]}
+                    >
                         <View style={styles.autofillLeft}>
                             <View style={[styles.autofillIcon, { backgroundColor: theme.colors.accent + '20' }]}>
                                 <Ionicons name="flash-outline" size={20} color={theme.colors.accent} />
@@ -78,23 +84,12 @@ export default function SettingsPage() {
                                 </Text>
                             </View>
                         </View>
-                        <Pressable
-                            onPress={handleEnableAutofill}
-                            style={({ pressed }) => [
-                                styles.autofillButton,
-                                {
-                                    opacity: pressed ? 0.7 : 1,
-                                    backgroundColor: isAutofillEnabled ? theme.colors.success + '20' : theme.colors.accent,
-                                }
-                            ]}
-                        >
-                            <Text style={[styles.buttonText, {
-                                color: isAutofillEnabled ? theme.colors.success : '#fff',
-                            }]}>
-                                {isAutofillEnabled ? t('common.enabled', 'Enabled') : t('common.enable', 'Enable')}
-                            </Text>
-                        </Pressable>
-                    </View>
+                        <Ionicons
+                            name={isAutofillEnabled ? 'checkmark-circle' : 'chevron-forward'}
+                            size={22}
+                            color={isAutofillEnabled ? theme.colors.success : theme.colors.textMuted}
+                        />
+                    </Pressable>
                 </View>
 
                 {/* Theme Mode */}
@@ -303,15 +298,6 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
     },
-    header: {
-        paddingTop: 60,
-        paddingHorizontal: 20,
-        paddingBottom: 16,
-    },
-    headerTitle: {
-        fontSize: 32,
-        fontFamily: 'Comfortaa_700Bold',
-    },
     content: {
         flex: 1,
     },
@@ -429,16 +415,6 @@ const styles = StyleSheet.create({
     autofillSubtitle: {
         fontSize: 13,
         fontFamily: 'Comfortaa_400Regular',
-    },
-    autofillButton: {
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 20,
-    },
-    buttonText: {
-        fontWeight: '600',
-        fontSize: 14,
-        fontFamily: 'Comfortaa_600SemiBold',
     },
     // Menu Item Styles
     sectionCard: {

@@ -6,8 +6,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { api } from '@/services/api';
 import { exportService } from '@/services/export';
+import { DEBOUNCE_STEP_MS, MAX_DEBOUNCE_MS, MIN_DEBOUNCE_MS, usePreferencesStore } from '@/stores/preferences';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -24,7 +24,11 @@ export default function AdvancedSettingsPage() {
 
     // Modals
     const [exportModalVisible, setExportModalVisible] = useState(false);
-    const [selectedFormat, setSelectedFormat] = useState<'csv'>('csv');
+    const [selectedFormat, setSelectedFormat] = useState<'csv' | 'json'>('json');
+    const autoSaveDebounceMs = usePreferencesStore((state) => state.autoSaveDebounceMs);
+    const historyDebounceMs = usePreferencesStore((state) => state.historyDebounceMs);
+    const setAutoSaveDebounceMs = usePreferencesStore((state) => state.setAutoSaveDebounceMs);
+    const setHistoryDebounceMs = usePreferencesStore((state) => state.setHistoryDebounceMs);
 
     // Error/Success Modal
     const [feedbackModal, setFeedbackModal] = useState<{ visible: boolean; title: string; message: string; type: 'error' | 'success' | 'info' } | null>(null);
@@ -38,10 +42,6 @@ export default function AdvancedSettingsPage() {
     const [deleteWarningVisible, setDeleteWarningVisible] = useState(false);
     const [deleteOtpVisible, setDeleteOtpVisible] = useState(false);
 
-    // Fetch all data for export
-    const { data: secrets } = useQuery({ queryKey: ['secrets'], queryFn: () => api.getSecrets(), enabled: false });
-    const { data: notes } = useQuery({ queryKey: ['notes'], queryFn: () => api.getNotes(), enabled: false });
-
     const performExport = async () => {
         setExportModalVisible(false);
         setLoading(true);
@@ -50,8 +50,11 @@ export default function AdvancedSettingsPage() {
             const allSecrets = await api.getSecrets();
             const allNotes = await api.getNotes();
 
-            // Currently only CSV is supported/enabled
-            await exportService.exportToCSV(allSecrets, allNotes);
+            if (selectedFormat === 'json') {
+                await exportService.exportToJSON(allSecrets, allNotes);
+            } else {
+                await exportService.exportToCSV(allSecrets, allNotes);
+            }
 
             setFeedbackModal({
                 visible: true,
@@ -69,6 +72,15 @@ export default function AdvancedSettingsPage() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const updateDebounce = (
+        current: number,
+        delta: number,
+        setter: (value: number) => void
+    ) => {
+        const next = Math.min(MAX_DEBOUNCE_MS, Math.max(MIN_DEBOUNCE_MS, current + delta));
+        setter(next);
     };
 
     const initiateChangeEmail = async () => {
@@ -195,6 +207,69 @@ export default function AdvancedSettingsPage() {
                     </TouchableOpacity>
                 </View>
 
+                {/* Editor Settings Section */}
+                <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.accent }]}>{t('settings.editorBehavior')}</Text>
+
+                    <View style={styles.row}>
+                        <View style={[styles.iconBox, { backgroundColor: theme.colors.accent + '20' }]}>
+                            <Ionicons name="save-outline" size={22} color={theme.colors.accent} />
+                        </View>
+                        <View style={styles.rowContent}>
+                            <Text style={[styles.rowTitle, { color: theme.colors.text }]}>{t('settings.autoSaveDebounce')}</Text>
+                            <Text style={[styles.rowSubtitle, { color: theme.colors.textMuted }]}>
+                                {`${autoSaveDebounceMs} ${t('settings.millisecondsShort')}`}
+                            </Text>
+                        </View>
+                        <View style={styles.stepperControls}>
+                            <TouchableOpacity
+                                style={[styles.stepperButton, { backgroundColor: theme.colors.surfaceElevated }]}
+                                onPress={() => updateDebounce(autoSaveDebounceMs, -DEBOUNCE_STEP_MS, setAutoSaveDebounceMs)}
+                                disabled={autoSaveDebounceMs <= MIN_DEBOUNCE_MS}
+                            >
+                                <Ionicons name="remove" size={18} color={theme.colors.text} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.stepperButton, { backgroundColor: theme.colors.surfaceElevated }]}
+                                onPress={() => updateDebounce(autoSaveDebounceMs, DEBOUNCE_STEP_MS, setAutoSaveDebounceMs)}
+                                disabled={autoSaveDebounceMs >= MAX_DEBOUNCE_MS}
+                            >
+                                <Ionicons name="add" size={18} color={theme.colors.text} />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+
+                    <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+
+                    <View style={styles.row}>
+                        <View style={[styles.iconBox, { backgroundColor: theme.colors.accent + '20' }]}>
+                            <Ionicons name="arrow-undo-outline" size={22} color={theme.colors.accent} />
+                        </View>
+                        <View style={styles.rowContent}>
+                            <Text style={[styles.rowTitle, { color: theme.colors.text }]}>{t('settings.undoRedoDebounce')}</Text>
+                            <Text style={[styles.rowSubtitle, { color: theme.colors.textMuted }]}>
+                                {`${historyDebounceMs} ${t('settings.millisecondsShort')}`}
+                            </Text>
+                        </View>
+                        <View style={styles.stepperControls}>
+                            <TouchableOpacity
+                                style={[styles.stepperButton, { backgroundColor: theme.colors.surfaceElevated }]}
+                                onPress={() => updateDebounce(historyDebounceMs, -DEBOUNCE_STEP_MS, setHistoryDebounceMs)}
+                                disabled={historyDebounceMs <= MIN_DEBOUNCE_MS}
+                            >
+                                <Ionicons name="remove" size={18} color={theme.colors.text} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.stepperButton, { backgroundColor: theme.colors.surfaceElevated }]}
+                                onPress={() => updateDebounce(historyDebounceMs, DEBOUNCE_STEP_MS, setHistoryDebounceMs)}
+                                disabled={historyDebounceMs >= MAX_DEBOUNCE_MS}
+                            >
+                                <Ionicons name="add" size={18} color={theme.colors.text} />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+
                 {/* Account Actions Section */}
                 <View style={[styles.section, { backgroundColor: theme.colors.surface, borderColor: theme.colors.error, borderWidth: 1 }]}>
                     <Text style={[styles.sectionTitle, { color: theme.colors.error }]}>{t('settings.dangerZone')}</Text>
@@ -242,13 +317,19 @@ export default function AdvancedSettingsPage() {
             >
                 <View style={{ gap: 12, width: '100%' }}>
                     <Button
+                        title={t('settings.exportFormatJSON')}
+                        onPress={() => setSelectedFormat('json')}
+                        variant={selectedFormat === 'json' ? 'primary' : 'outline'}
+                        icon={<Ionicons name="code-outline" size={18} color={selectedFormat === 'json' ? '#fff' : theme.colors.accent} />}
+                    />
+                    <Button
                         title={t('settings.exportFormatCSV')}
                         onPress={() => setSelectedFormat('csv')}
                         variant={selectedFormat === 'csv' ? 'primary' : 'outline'}
                         icon={<Ionicons name="grid-outline" size={18} color={selectedFormat === 'csv' ? '#fff' : theme.colors.accent} />}
                     />
-                    <Text style={{ fontSize: 12, color: theme.colors.error, textAlign: 'center', marginTop: 16, marginBottom: 20 }}>
-                        {t('settings.exportWarning')}
+                    <Text style={{ fontSize: 12, color: selectedFormat === 'csv' ? theme.colors.error : theme.colors.textMuted, textAlign: 'center', marginTop: 16, marginBottom: 20 }}>
+                        {selectedFormat === 'csv' ? t('settings.exportWarning') : t('settings.exportJSONInfo')}
                     </Text>
                 </View>
             </Modal>
@@ -410,6 +491,18 @@ const styles = StyleSheet.create({
     rowSubtitle: {
         fontSize: 12,
         fontFamily: 'Comfortaa_400Regular',
+    },
+    stepperControls: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    stepperButton: {
+        width: 34,
+        height: 34,
+        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     divider: {
         height: 1,

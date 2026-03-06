@@ -12,7 +12,7 @@ import {
 } from '@/services/crypto';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
     ScrollView,
@@ -22,17 +22,29 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type GeneratorType = 'password' | 'passphrase' | 'secret' | 'ssh';
+type CopyTarget = 'result' | 'ssh_public' | 'ssh_private';
 
 export default function GeneratorsPage() {
     const { t } = useTranslation();
     const { theme } = useTheme();
+    const insets = useSafeAreaInsets();
     const [activeTab, setActiveTab] = useState<GeneratorType>('password');
     const [result, setResult] = useState<string | null>(null);
     const [sshResult, setSSHResult] = useState<{ publicKey: string; privateKey: string; fingerprint: string } | null>(null);
     const [isGenerating, setIsGenerating] = useState(false);
-    const [copied, setCopied] = useState(false);
+    const [copiedTarget, setCopiedTarget] = useState<CopyTarget | null>(null);
+    const copyResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+        return () => {
+            if (copyResetTimeoutRef.current) {
+                clearTimeout(copyResetTimeoutRef.current);
+            }
+        };
+    }, []);
 
     // Password options
     const [passwordLength, setPasswordLength] = useState(DEFAULT_PASSWORD_OPTIONS.length);
@@ -56,7 +68,7 @@ export default function GeneratorsPage() {
         setIsGenerating(true);
         setResult(null);
         setSSHResult(null);
-        setCopied(false);
+        setCopiedTarget(null);
 
         try {
             switch (activeTab) {
@@ -102,13 +114,17 @@ export default function GeneratorsPage() {
         }
     };
 
-    const copyToClipboard = async (text: string) => {
+    const copyToClipboard = async (text: string, target: CopyTarget) => {
         await Clipboard.setStringAsync(text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        setCopiedTarget(target);
+
+        if (copyResetTimeoutRef.current) {
+            clearTimeout(copyResetTimeoutRef.current);
+        }
+        copyResetTimeoutRef.current = setTimeout(() => setCopiedTarget(null), 2000);
     };
 
-    const tabs: Array<{ key: GeneratorType; label: string; icon: string }> = [
+    const tabs: { key: GeneratorType; label: string; icon: string }[] = [
         { key: 'password', label: t('generators.tabs.password'), icon: 'key' },
         { key: 'passphrase', label: t('generators.tabs.passphrase'), icon: 'text' },
         { key: 'secret', label: t('generators.tabs.secret'), icon: 'shield' },
@@ -119,13 +135,8 @@ export default function GeneratorsPage() {
 
     return (
         <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
-            {/* Header */}
-            <View style={styles.header}>
-                <Text style={[styles.headerTitle, { color: theme.colors.text }]}>{t('generators.title')}</Text>
-            </View>
-
             {/* Tabs */}
-            <View style={styles.tabsContainer}>
+            <View style={[styles.tabsContainer, { paddingTop: insets.top + 12 }]}>
                 <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
@@ -357,9 +368,9 @@ export default function GeneratorsPage() {
                     <View style={styles.resultSection}>
                         <View style={styles.resultHeader}>
                             <Text style={[styles.resultLabel, { color: theme.colors.textMuted }]}>{t('generators.result')}</Text>
-                            <TouchableOpacity onPress={() => copyToClipboard(result)}>
+                            <TouchableOpacity onPress={() => copyToClipboard(result, 'result')}>
                                 <Text style={[styles.copyBtn, { color: theme.colors.accent }]}>
-                                    {copied ? t('common.copied') : t('common.copy')}
+                                    {copiedTarget === 'result' ? t('common.copied') : t('common.copy')}
                                 </Text>
                             </TouchableOpacity>
                         </View>
@@ -402,8 +413,10 @@ export default function GeneratorsPage() {
                             <Text style={[styles.resultLabel, { color: theme.colors.textMuted }]}>
                                 {t('generators.publicKey')}
                             </Text>
-                            <TouchableOpacity onPress={() => copyToClipboard(sshResult.publicKey)}>
-                                <Text style={[styles.copyBtn, { color: theme.colors.accent }]}>{t('common.copy')}</Text>
+                            <TouchableOpacity onPress={() => copyToClipboard(sshResult.publicKey, 'ssh_public')}>
+                                <Text style={[styles.copyBtn, { color: theme.colors.accent }]}>
+                                    {copiedTarget === 'ssh_public' ? t('common.copied') : t('common.copy')}
+                                </Text>
                             </TouchableOpacity>
                         </View>
                         <View style={[styles.resultBox, { backgroundColor: theme.colors.surface }]}>
@@ -416,8 +429,10 @@ export default function GeneratorsPage() {
                             <Text style={[styles.resultLabel, { color: theme.colors.textMuted }]}>
                                 {t('generators.privateKey')}
                             </Text>
-                            <TouchableOpacity onPress={() => copyToClipboard(sshResult.privateKey)}>
-                                <Text style={[styles.copyBtn, { color: theme.colors.accent }]}>{t('common.copy')}</Text>
+                            <TouchableOpacity onPress={() => copyToClipboard(sshResult.privateKey, 'ssh_private')}>
+                                <Text style={[styles.copyBtn, { color: theme.colors.accent }]}>
+                                    {copiedTarget === 'ssh_private' ? t('common.copied') : t('common.copy')}
+                                </Text>
                             </TouchableOpacity>
                         </View>
                         <View style={[styles.resultBox, { backgroundColor: theme.colors.surface }]}>
@@ -488,16 +503,8 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
     },
-    header: {
-        paddingTop: 60,
-        paddingHorizontal: 20,
-        paddingBottom: 16,
-    },
-    headerTitle: {
-        fontSize: 32,
-        fontFamily: 'Comfortaa_700Bold',
-    },
     tabsContainer: {
+        paddingTop: 16,
         marginBottom: 16,
     },
     tabsContent: {

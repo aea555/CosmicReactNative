@@ -88,6 +88,15 @@ function VaultContent() {
     const [bulkDeleteConfirmVisible, setBulkDeleteConfirmVisible] = useState(false);
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
+    useEffect(() => {
+        if (!selectionMode) return;
+        if (selectedSecrets.size + selectedNotes.size > 0) return;
+
+        setSelectionMode(false);
+        setSelectedSecrets(new Set());
+        setSelectedNotes(new Set());
+    }, [selectionMode, selectedSecrets, selectedNotes]);
+
     // Form states
     const [formData, setFormData] = useState({
         title: '',
@@ -582,28 +591,96 @@ function VaultContent() {
         return result;
     };
 
-    const isDuplicate = (newItem: any, existingItems: Array<Secret | Note>) => {
-        // Check against relevant list based on type
-        // This is a naive check. Improve as needed.
-        if (newItem.type === 'note') {
-            // For notes, check title and content match in existing NOTES
-            return notes.some((n: Note) => n.title === newItem.title && (n.content || '') === (newItem.content || ''));
-        } else {
-            // For secrets
-            return secrets.some((s: Secret) => {
-                const sTitle = s.title || '';
-                const sUsername = s.username || '';
-                const sPassword = s.password || '';
-                const sUrl = s.url || '';
+    const normalizeImportField = (value: unknown) => {
+        return typeof value === 'string' ? value.trim() : '';
+    };
 
-                const nTitle = newItem.title || '';
-                const nUsername = newItem.username || '';
-                const nPassword = newItem.password || '';
-                const nUrl = newItem.url || '';
+    const buildSecretSignature = (item: Partial<Secret>) => {
+        return [
+            normalizeImportField(item.title),
+            normalizeImportField(item.username),
+            normalizeImportField(item.password),
+            normalizeImportField(item.url),
+            normalizeImportField(item.email),
+            normalizeImportField(item.telephone_number),
+        ].join('||');
+    };
 
-                return sTitle === nTitle && sUsername === nUsername && sPassword === nPassword && sUrl === nUrl;
+    const buildNoteSignature = (item: Partial<Note>) => {
+        return [
+            normalizeImportField(item.title),
+            normalizeImportField(item.content),
+        ].join('||');
+    };
+
+    const parseJSONImport = (jsonData: any) => {
+        const importedItems: any[] = [];
+
+        const addSecret = (raw: any) => {
+            const title = normalizeImportField(raw?.title);
+            if (!title) return;
+
+            importedItems.push({
+                type: 'secret',
+                title,
+                username: normalizeImportField(raw?.username) || undefined,
+                password: normalizeImportField(raw?.password) || undefined,
+                url: normalizeImportField(raw?.url) || undefined,
+                email: normalizeImportField(raw?.email) || undefined,
+                telephone_number: normalizeImportField(raw?.telephone_number) || undefined,
             });
+        };
+
+        const addNote = (raw: any) => {
+            const title = normalizeImportField(raw?.title);
+            if (!title) return;
+
+            importedItems.push({
+                type: 'note',
+                title,
+                content: normalizeImportField(raw?.content) || undefined,
+            });
+        };
+
+        if (Array.isArray(jsonData)) {
+            jsonData.forEach((entry) => {
+                const explicitType = normalizeImportField(entry?.type).toLowerCase();
+                const inferredType =
+                    explicitType === 'note'
+                        ? 'note'
+                        : explicitType === 'secret'
+                            ? 'secret'
+                            : (entry?.content && !entry?.password && !entry?.username && !entry?.url && !entry?.email)
+                                ? 'note'
+                                : 'secret';
+
+                if (inferredType === 'note') addNote(entry);
+                else addSecret(entry);
+            });
+            return importedItems;
         }
+
+        if (jsonData && typeof jsonData === 'object') {
+            if (Array.isArray(jsonData.secrets)) {
+                jsonData.secrets.forEach(addSecret);
+            }
+
+            if (Array.isArray(jsonData.notes)) {
+                jsonData.notes.forEach(addNote);
+            }
+
+            if (importedItems.length === 0 && jsonData.title) {
+                const inferredType =
+                    jsonData.content && !jsonData.password && !jsonData.username && !jsonData.url && !jsonData.email
+                        ? 'note'
+                        : 'secret';
+
+                if (inferredType === 'note') addNote(jsonData);
+                else addSecret(jsonData);
+            }
+        }
+
+        return importedItems;
     };
 
     const processImportQueue = async (queue: any[], startIndex: number, skippedCount: number) => {
@@ -683,33 +760,16 @@ function VaultContent() {
             const fileUri = result.assets[0].uri;
             const fileName = result.assets[0].name || '';
             const fileContent = await FileSystem.readAsStringAsync(fileUri);
+            const trimmedContent = fileContent.trim();
 
             let parsedItems: any[] = [];
 
             // Detect file format by extension or content
-            if (fileName.toLowerCase().endsWith('.json') || fileContent.trim().startsWith('{')) {
-                // JSON format (exported from our app)
+            if (fileName.toLowerCase().endsWith('.json') || trimmedContent.startsWith('{') || trimmedContent.startsWith('[')) {
                 try {
                     const jsonData = JSON.parse(fileContent);
-
-                    // Handle our app's export format
-                    if (jsonData.secrets && Array.isArray(jsonData.secrets)) {
-                        parsedItems = jsonData.secrets.map((s: any) => ({
-                            title: s.title,
-                            username: s.username,
-                            password: s.password,
-                            url: s.url,
-                            email: s.email,
-                            telephone_number: s.telephone_number,
-                        }));
-                    }
-
-                    // Also import notes if present (as notes, not secrets)
-                    if (jsonData.notes && Array.isArray(jsonData.notes) && jsonData.notes.length > 0) {
-                        // For now, we only import secrets from JSON
-                        // Notes would need separate handling
-                    }
-                } catch (parseError) {
+                    parsedItems = parseJSONImport(jsonData);
+                } catch {
                     throw new Error('Invalid JSON file format');
                 }
             } else {
@@ -728,16 +788,30 @@ function VaultContent() {
             }
 
             // FILTER DUPLICATES
+            const existingSecretSignatures = new Set(secrets.map((secret) => buildSecretSignature(secret)));
+            const existingNoteSignatures = new Set(notes.map((note) => buildNoteSignature(note)));
             const filteredItems: any[] = [];
             let skipped = 0;
 
-            parsedItems.forEach(item => {
-                const isDup = isDuplicate(item, item.type === 'note' ? notes : secrets);
-                if (isDup) {
-                    skipped++;
-                } else {
+            parsedItems.forEach((item) => {
+                if (item.type === 'note') {
+                    const signature = buildNoteSignature(item);
+                    if (existingNoteSignatures.has(signature)) {
+                        skipped++;
+                        return;
+                    }
+                    existingNoteSignatures.add(signature);
                     filteredItems.push(item);
+                    return;
                 }
+
+                const signature = buildSecretSignature(item);
+                if (existingSecretSignatures.has(signature)) {
+                    skipped++;
+                    return;
+                }
+                existingSecretSignatures.add(signature);
+                filteredItems.push(item);
             });
 
             if (filteredItems.length === 0 && skipped > 0) {
@@ -795,7 +869,7 @@ function VaultContent() {
     // --- End Import Logic ---
 
     const combinedItems = useMemo(() => {
-        let items: Array<{ item: Secret | Note; type: ItemType; isFavorite: boolean }> = [];
+        let items: { item: Secret | Note; type: ItemType; isFavorite: boolean }[] = [];
 
         if (showSecrets) {
             filteredSecrets.forEach((s) => {
@@ -1016,7 +1090,7 @@ function VaultContent() {
                                     <View style={[styles.menuDivider, { backgroundColor: theme.colors.border }]} />
                                     <TouchableOpacity style={styles.createMenuItem} onPress={handleImportFromGoogle}>
                                         <Ionicons name="cloud-upload-outline" size={20} color={theme.colors.text} />
-                                        <Text style={[styles.createMenuText, { color: theme.colors.text }]}>{t('vault.importCSV')}</Text>
+                                        <Text style={[styles.createMenuText, { color: theme.colors.text }]}>{t('vault.importData')}</Text>
                                     </TouchableOpacity>
                                 </View>
                             )}

@@ -1,5 +1,5 @@
 import { API_BASE_URL } from '@/config';
-import { api } from '@/services/api';
+import { ApiRequestError, api } from '@/services/api';
 import { clearAutofillData } from '@/services/autofillSync';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
@@ -14,13 +14,6 @@ interface Tokens {
     accessToken: string;
     refreshToken: string;
     expiresIn: number;
-}
-
-interface JwtPayload {
-    sub: string;
-    email: string;
-    exp: number;
-    iat: number;
 }
 
 interface AuthContextType {
@@ -122,12 +115,48 @@ export function AuthProvider({ children }: AuthProviderProps) {
         try {
             api.setMasterPassword(password);
             api.setAccessToken(accessToken);
+            // Verify the password against a protected endpoint before unlocking UI
+            await api.getSecrets({ skipAuthRefresh: true });
             setMasterPasswordState(password);
             setAuthState('AUTHENTICATED');
         } catch (error) {
             api.setMasterPassword(null);
             setMasterPasswordState(null);
-            throw error;
+            setAuthState('NEEDS_UNLOCK');
+
+            if (error instanceof ApiRequestError) {
+                const invalidPasswordCodes = new Set([
+                    'MASTER_PASSWORD_REQUIRED',
+                    'INVALID_MASTER_PASSWORD',
+                    'INVALID_MASTER_KEY',
+                    'DECRYPTION_FAILED',
+                    'INVALID_CREDENTIALS',
+                    'AUTHENTICATION_FAILED',
+                ]);
+                const sessionExpiredCodes = new Set([
+                    'INVALID_TOKEN',
+                    'TOKEN_EXPIRED',
+                    'SESSION_EXPIRED',
+                ]);
+
+                if (invalidPasswordCodes.has(error.code)) {
+                    throw new Error(t('errors.invalidPassword'));
+                }
+                if (sessionExpiredCodes.has(error.code)) {
+                    throw new Error(t('errors.sessionExpired'));
+                }
+
+                // For unlock flow, any other API error should still be treated as invalid password
+                // to avoid leaking backend error strings and keep localization consistent.
+                throw new Error(t('errors.invalidPassword'));
+            }
+
+            const rawMessage = (error as Error)?.message?.toLowerCase() || '';
+            if (rawMessage.includes('session expired') || rawMessage.includes('token expired')) {
+                throw new Error(t('errors.sessionExpired'));
+            }
+
+            throw new Error(t('errors.invalidPassword'));
         }
     };
 
@@ -221,7 +250,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
     };
 
-    const logout = async () => {
+    const logout = useCallback(async () => {
         try {
             if (refreshToken) {
                 await fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
@@ -239,7 +268,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             setAuthState('NOT_AUTHENTICATED');
             router.replace('/(auth)/landing');
         }
-    };
+    }, [refreshToken]);
 
     const refreshTokens = useCallback(async (): Promise<string | null> => {
         // Guard: no token or empty token
@@ -322,13 +351,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
         (globalThis as any).__cosmicRefreshTokens = refreshTokens;
         (globalThis as any).__cosmicSetRefreshing = setIsRefreshing;
         (globalThis as any).__cosmicLogout = logout;
+        (globalThis as any).__cosmicShouldAutoLogout = authState === 'AUTHENTICATED';
 
         return () => {
             delete (globalThis as any).__cosmicRefreshTokens;
             delete (globalThis as any).__cosmicSetRefreshing;
             delete (globalThis as any).__cosmicLogout;
+            delete (globalThis as any).__cosmicShouldAutoLogout;
         };
-    }, [refreshTokens]);
+    }, [authState, refreshTokens, logout]);
 
     const setMasterPassword = (password: string) => {
         setMasterPasswordState(password);

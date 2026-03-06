@@ -27,10 +27,10 @@ export default function UnlockScreen() {
             await unlockVault(password);
             // Navigation will be handled by NavigationGuard when authState changes to AUTHENTICATED
         } catch (err: any) {
-            console.error('Unlock failed', err);
-            // Since we're just restoring session, ANY error likely means wrong password 
-            // OR token expired (which refreshTokens() inside unlockVault would handle/throw)
-            setError(t('errors.invalidPassword') || 'Invalid password');
+            if (__DEV__) {
+                console.warn('Unlock failed', err);
+            }
+            setError(err?.message || t('errors.invalidPassword') || 'Invalid password');
             setPassword('');
         } finally {
             setIsLoading(false);

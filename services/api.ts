@@ -7,6 +7,7 @@ import { API_BASE_URL } from '@/config';
 interface ApiOptions extends RequestInit {
     requiresAuth?: boolean;
     requiresMasterPassword?: boolean;
+    skipAuthRefresh?: boolean;
 }
 
 interface ApiError {
@@ -36,7 +37,12 @@ class ApiService {
     }
 
     async request<T>(endpoint: string, options: ApiOptions = {}): Promise<T> {
-        const { requiresAuth = true, requiresMasterPassword = false, ...fetchOptions } = options;
+        const {
+            requiresAuth = true,
+            requiresMasterPassword = false,
+            skipAuthRefresh = false,
+            ...fetchOptions
+        } = options;
 
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
@@ -61,15 +67,25 @@ class ApiService {
             let errorData: any = {};
             try {
                 errorData = await response.json();
-            } catch (e) {
+            } catch {
                 // response might be empty or text
             }
 
-            // Only attempt refresh if strict code match or strict 401 behavior required
-            // We specifically look for "INVALID_TOKEN" or generic 401s if no code provided
-            const isInvalidToken = errorData.code === 'INVALID_TOKEN' || response.status === 401;
+            const errorCode = typeof errorData?.code === 'string' ? errorData.code : '';
 
-            if (isInvalidToken) {
+            // For flows like unlock verification, never trigger refresh/logout cascade.
+            if (skipAuthRefresh) {
+                throw new ApiRequestError(
+                    errorData.error || 'Authentication failed',
+                    errorCode || 'AUTHENTICATION_FAILED'
+                );
+            }
+
+            const isTokenError = errorCode === 'INVALID_TOKEN' || errorCode === 'TOKEN_EXPIRED';
+            const shouldAttemptRefresh =
+                isTokenError || (!requiresMasterPassword && !errorCode);
+
+            if (shouldAttemptRefresh) {
                 const newToken = await this.attemptTokenRefresh();
 
                 if (newToken) {
@@ -82,35 +98,51 @@ class ApiService {
                     });
 
                     if (!retryResponse.ok) {
-                        const retryData = await retryResponse.json();
+                        let retryData: any = {};
+                        try {
+                            retryData = await retryResponse.json();
+                        } catch {
+                            // Ignore parse errors for retry payload
+                        }
                         // If retry fails with same error, then we really logout
                         if (retryResponse.status === 401) {
                             await this.handleRefreshFailure();
                             throw new ApiRequestError('Session expired', 'SESSION_EXPIRED');
                         }
-                        throw new ApiRequestError(retryData.error || 'Request failed', retryData.code);
+                        throw new ApiRequestError(retryData.error || 'Request failed', retryData.code || 'REQUEST_FAILED');
                     }
 
-                    return retryResponse.json().then(d => d.data || d);
+                    let retryData: any = null;
+                    try {
+                        retryData = await retryResponse.json();
+                    } catch {
+                        return null as T;
+                    }
+                    return retryData?.data || retryData;
                 } else {
                     // Refresh failed - logout user silently (app will redirect)
                     await this.handleRefreshFailure();
                     // We throw a specific error that UI can ignore or show as "Logged out"
                     throw new ApiRequestError('Session expired. Please log in again.', 'SESSION_EXPIRED');
                 }
-            } else {
-                throw new ApiRequestError(errorData.error || 'Authentication failed', errorData.code);
             }
+
+            throw new ApiRequestError(errorData.error || 'Authentication failed', errorCode || 'AUTHENTICATION_FAILED');
         }
 
-        const data: ApiResponse<T> = await response.json();
+        let data: ApiResponse<T> | null = null;
+        try {
+            data = await response.json();
+        } catch {
+            data = null;
+        }
 
         if (!response.ok) {
-            throw new ApiRequestError((data as ApiError).error || 'Request failed', (data as ApiError).code);
+            throw new ApiRequestError((data as ApiError)?.error || 'Request failed', (data as ApiError)?.code || 'REQUEST_FAILED');
         }
 
-        if ('data' in data) {
-            return data.data;
+        if (data && typeof data === 'object' && 'data' in data) {
+            return (data as ApiSuccess<T>).data;
         }
 
         return data as unknown as T;
@@ -145,6 +177,12 @@ class ApiService {
     }
 
     private async handleRefreshFailure(): Promise<void> {
+        const shouldAutoLogout = (globalThis as any).__cosmicShouldAutoLogout;
+        if (shouldAutoLogout === false) {
+            console.warn('Refresh failed while auto-logout is suppressed');
+            return;
+        }
+
         const logout = (globalThis as any).__cosmicLogout;
         if (logout) {
             console.log('Refresh failed, logging out...');
@@ -153,9 +191,10 @@ class ApiService {
     }
 
     // Secrets API
-    async getSecrets() {
+    async getSecrets(options?: { skipAuthRefresh?: boolean }) {
         return this.request<Secret[]>('/api/v1/secrets', {
             requiresMasterPassword: true,
+            skipAuthRefresh: options?.skipAuthRefresh ?? false,
         });
     }
 
@@ -253,7 +292,7 @@ class ApiService {
     }
 
     // Bulk Operations
-    async bulkCreate(data: { items: Array<{ item_type: 'secret' | 'note', data: any }> }) {
+    async bulkCreate(data: { items: { item_type: 'secret' | 'note', data: any }[] }) {
         return this.request<void>('/api/v1/items/bulk-create', {
             method: 'POST',
             body: JSON.stringify(data),
@@ -261,7 +300,7 @@ class ApiService {
         });
     }
 
-    async bulkDelete(items: Array<{ id: string; item_type: 'secret' | 'note' }>) {
+    async bulkDelete(items: { id: string; item_type: 'secret' | 'note' }[]) {
         return this.request<void>('/api/v1/items/bulk-delete', {
             method: 'DELETE',
             body: JSON.stringify({ items }),
@@ -269,7 +308,7 @@ class ApiService {
         });
     }
 
-    async bulkFavorite(items: Array<{ id: string; item_type: 'secret' | 'note' }>) {
+    async bulkFavorite(items: { id: string; item_type: 'secret' | 'note' }[]) {
         return this.request<void>('/api/v1/items/bulk-favorite', {
             method: 'PUT',
             body: JSON.stringify({ items }),
@@ -277,7 +316,7 @@ class ApiService {
         });
     }
 
-    async bulkUnfavorite(items: Array<{ id: string; item_type: 'secret' | 'note' }>) {
+    async bulkUnfavorite(items: { id: string; item_type: 'secret' | 'note' }[]) {
         return this.request<void>('/api/v1/items/bulk-unfavorite', {
             method: 'PUT',
             body: JSON.stringify({ items }),
